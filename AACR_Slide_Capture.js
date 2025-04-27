@@ -66,6 +66,17 @@ async function ensurePHash() {
   }
 }
 
+async function ensureJSZip() {
+  if (typeof JSZip === 'undefined') {
+    await new Promise(resolve => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js';
+      s.onload = resolve;
+      document.head.appendChild(s);
+    });
+  }
+}
+
 function dataURLtoFile(dataurl, filename) {
   const [hdr, b64] = dataurl.split(',');
   const mime = hdr.match(/:(.*?);/)[1];
@@ -175,7 +186,7 @@ async function captureFrame() {
     const previousHash = imageHashes[imageHashes.length - 1] || null;
     const similarity = calcSimilarity(currentHash, previousHash);
 
-    if (!previousHash || similarity < 85) {
+    if (!previousHash || similarity < 95) {
       imageHashes.push(currentHash);
       images.push(croppedDataURL);
       console.log(`✅ Captured #${images.length} (sim=${similarity.toFixed(1)}%)`);
@@ -202,14 +213,36 @@ async function startCapture() {
   console.log('🟢 Started capturing unique frames every second');
 }
 
-function endCapture() {
+async function endCapture() {
   if (captureIntervalId !== null) {
     clearInterval(captureIntervalId);
     captureIntervalId = null;
   }
-  console.log(`📥 Downloading ${images.length} frames…`);
-  images.forEach((dataURL, idx) =>
-    downloadDataURL(dataURL, `frame-${idx + 1}.png`)
-  );
-  console.log('✅ All frames downloaded');
+
+  console.log(`📥 Zipping ${images.length} frames…`);
+  await ensureJSZip();
+
+  const zip = new JSZip();
+  const imgFolder = zip.folder('images');
+
+  images.forEach((dataURL, idx) => {
+    // strip off "data:image/png;base64,"
+    const base64 = dataURL.split(',')[1];
+    imgFolder.file(`frame-${idx + 1}.png`, base64, { base64: true });
+  });
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(blob);
+
+  // trigger a single download
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'frames.zip';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // clean up
+  URL.revokeObjectURL(url);
+  console.log('✅ All frames zipped and download started');
 }
