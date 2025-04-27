@@ -1,11 +1,8 @@
 // ——————————————————————————————————————————————————————————
-// 0) Suppress those ImageMagick ‘colors.xml’ warnings
-//    by feeding an empty printErr handler into the Module that
-//    magick.js will attach to.
+// 0) Suppress ImageMagick ‘colors.xml’ warnings
 // ——————————————————————————————————————————————————————————
 window.Module = window.Module || {};
 Module.printErr = msg => {
-  // swallow only the missing-colors.xml warning; re-throw others if you like
   if (!msg.includes("UnableToOpenConfigureFile")) {
     console.error(msg);
   }
@@ -14,20 +11,57 @@ Module.printErr = msg => {
 // ——————————————————————————————————————————————————————————
 // 1) Global state
 // ——————————————————————————————————————————————————————————
+
+let video = null;
 const images = [];
 const imageHashes = [];
 let captureIntervalId = null;
+let captureVideoElement = null; // ← user-selected override
+
+// Global canvases for video frame, cropped area, and thumbnail
+const sharedCanvas = document.createElement('canvas');
+const sharedCtx = sharedCanvas.getContext('2d');
+
+// 2) compute proportional crop: bottom-right ~75% width, ~75% height
+const cropWidthPct = 0.75; // 75% of width
+const cropHeightPct = 0.75; // 75% of height
+
+
+const cropCanvas = document.createElement('canvas');
+cropCanvas.width = 962;
+cropCanvas.height = 543;
+const cropCtx = cropCanvas.getContext('2d');
+
+const thumbCanvas = document.createElement('canvas');
+thumbCanvas.width = thumbCanvas.height = 64;
+const thumbCtx = thumbCanvas.getContext('2d');
+
+// Previous thumbnail to compare frames
+let previousThumbData = null;
+
+
 
 // ——————————————————————————————————————————————————————————
 // 2) Helpers
 // ——————————————————————————————————————————————————————————
+function selectDefaultVideo() {
+  const videos = document.querySelectorAll('video');
+  if (videos.length === 0) {
+    console.warn('⚠️ No <video> elements found on page.');
+    video = null;
+  } else {
+    video = videos[0];
+    console.log('🎬 Selected default video:', video);
+  }
+}
+
 async function ensurePHash() {
   if (typeof pHash === 'undefined') {
     await new Promise(resolve => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/phash-js/dist/phash.js';
-      script.onload = resolve;
-      document.head.appendChild(script);
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/phash-js/dist/phash.js';
+      s.onload = resolve;
+      document.head.appendChild(s);
     });
   }
 }
@@ -60,32 +94,79 @@ function downloadDataURL(dataURL, filename) {
 }
 
 // ——————————————————————————————————————————————————————————
-// 3) Capture one frame, hash it, and store only if it’s new
+// 3) Frame capture
 // ——————————————————————————————————————————————————————————
 async function captureFrame() {
-  const video = document.querySelector('video');
   if (!video) {
-    console.warn('⚠️ No <video> element found; stopping capture.');
+    console.warn('⚠️ No video selected; stopping capture.');
     clearInterval(captureIntervalId);
     captureIntervalId = null;
     return;
   }
-  // if (video.paused || video.ended) {
-  //   console.log('⏹ Video paused/ended; stopping capture.');
-  //   clearInterval(captureIntervalId);
-  //   captureIntervalId = null;
-  //   return;
-  // }
+  if (video.paused || video.ended) {
+    console.log('⏹ Video paused/ended; stopping capture.');
+    clearInterval(captureIntervalId);
+    captureIntervalId = null;
+    return;
+  }
 
-  // draw to canvas
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  // 1) draw full frame into sharedCanvas
+  sharedCanvas.width = video.videoWidth;
+  sharedCanvas.height = video.videoHeight;
+  sharedCtx.drawImage(video, 0, 0, sharedCanvas.width, sharedCanvas.height);
 
-  // extract PNG dataURL & wrap as File
-  const dataURL = canvas.toDataURL('image/png');
-  const file = dataURLtoFile(dataURL, `frame-${Date.now()}.png`);
+  // 2) now crop: bottom-right 962×543 from 1280×720
+  const cropWidth = Math.floor(sharedCanvas.width * cropWidthPct);
+  const cropHeight = Math.floor(sharedCanvas.height * cropHeightPct);
+  const cropX = sharedCanvas.width - cropWidth;
+  const cropY = sharedCanvas.height - cropHeight;
+
+  // Update the cropCanvas size dynamically (optional, if input changes)
+  if (cropCanvas.width !== cropWidth || cropCanvas.height !== cropHeight) {
+    cropCanvas.width = cropWidth;
+    cropCanvas.height = cropHeight;
+  }
+
+  // draw the cropped portion
+  cropCtx.clearRect(0, 0, cropWidth, cropHeight);
+  cropCtx.drawImage(
+    sharedCanvas,
+    cropX, cropY, cropWidth, cropHeight, // source rectangle
+    0, 0, cropWidth, cropHeight          // destination rectangle
+  );
+
+
+  // 3) draw scaled 64x64 thumbnail from cropped canvas
+  thumbCtx.clearRect(0, 0, 64, 64);
+  thumbCtx.drawImage(
+    cropCanvas,
+    0, 0, cropCanvas.width, cropCanvas.height,
+    0, 0, 64, 64
+  );
+
+  // 4) get thumbnail pixel data
+  const thumbData = thumbCtx.getImageData(0, 0, 64, 64).data;
+
+  // 5) compare to previous; skip if identical
+  if (previousThumbData) {
+    let identical = true;
+    for (let i = 0; i < thumbData.length; i++) {
+      if (thumbData[i] !== previousThumbData[i]) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) {
+      console.log('⚪ Thumbnail unchanged; skipping pHash');
+      return;
+    }
+  }
+  // update for next frame
+  previousThumbData = thumbData;
+
+  // 6) encode and run pHash only when content changed
+  const croppedDataURL = cropCanvas.toDataURL('image/png');
+  const file = dataURLtoFile(croppedDataURL, `frame-${Date.now()}.png`);
 
   // compute pHash
   try {
@@ -94,12 +175,12 @@ async function captureFrame() {
     const previousHash = imageHashes[imageHashes.length - 1] || null;
     const similarity = calcSimilarity(currentHash, previousHash);
 
-    if (!previousHash || similarity < 95) {
+    if (!previousHash || similarity < 85) {
       imageHashes.push(currentHash);
-      images.push(dataURL);
+      images.push(croppedDataURL);
       console.log(`✅ Captured #${images.length} (sim=${similarity.toFixed(1)}%)`);
     } else {
-      console.log(`⚪ Skipped duplicate (sim=${similarity.toFixed(1)}%)`);
+      console.log(`⚪ Skipped duplicate frame (sim=${similarity.toFixed(1)}%)`);
     }
   } catch (err) {
     console.error('pHash error:', err);
@@ -107,7 +188,7 @@ async function captureFrame() {
 }
 
 // ——————————————————————————————————————————————————————————
-// 4) startCapture() and endCapture()
+// 4) startCapture() / endCapture()
 // ——————————————————————————————————————————————————————————
 async function startCapture() {
   await ensurePHash();
@@ -127,8 +208,8 @@ function endCapture() {
     captureIntervalId = null;
   }
   console.log(`📥 Downloading ${images.length} frames…`);
-  images.forEach((dataURL, idx) => {
-    downloadDataURL(dataURL, `frame-${idx + 1}.png`);
-  });
+  images.forEach((dataURL, idx) =>
+    downloadDataURL(dataURL, `frame-${idx + 1}.png`)
+  );
   console.log('✅ All frames downloaded');
 }
