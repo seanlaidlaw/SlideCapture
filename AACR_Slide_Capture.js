@@ -320,7 +320,8 @@ async function startCapture() {
     controls.style.padding = '5px';
     controls.style.background = 'rgba(0,0,0,0.7)';
     controls.style.borderRadius = '4px';
-    controls.style.zIndex = '1000';
+    controls.style.zIndex = '1002'; // Highest z-index
+    controls.style.pointerEvents = 'auto'; // Allow clicks on controls
     
     // Width control
     const widthControl = document.createElement('div');
@@ -345,10 +346,10 @@ async function startCapture() {
     const overlay = document.createElement('div');
     overlay.id = 'capture-overlay';
     overlay.style.position = 'absolute';
-    overlay.style.pointerEvents = 'none';
     overlay.style.border = '3px solid red';
     overlay.style.borderRadius = '4px';
     overlay.style.boxSizing = 'border-box';
+    overlay.style.zIndex = '1001'; // Above video but below controls
     
     // Function to update crop area
     const updateCropArea = () => {
@@ -399,10 +400,11 @@ async function startCapture() {
       console.error('Could not find crop percentage inputs');
     }
     
-    // Make video container relative positioned if it isn't already
+    // Make video container relative positioned and adjust z-index
     if (getComputedStyle(video.parentElement).position === 'static') {
       video.parentElement.style.position = 'relative';
     }
+    video.style.zIndex = '1000'; // Ensure video is below overlay and controls
     
     // Position controls above overlay
     controls.style.bottom = `calc(100% + 5px)`;
