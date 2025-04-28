@@ -358,8 +358,8 @@ async function startCapture() {
         
         if (!widthInput || !heightInput || !video) return;
         
-        const widthPct = Math.min(1, Math.max(0.1, parseInt(widthInput.value)/100);
-        const heightPct = Math.min(1, Math.max(0.1, parseInt(heightInput.value)/100);
+        const widthPct = Math.min(1, Math.max(0.1, parseInt(widthInput.value)/100));
+        const heightPct = Math.min(1, Math.max(0.1, parseInt(heightInput.value)/100));
         
         // Update input values in case they were out of bounds
         widthInput.value = Math.round(widthPct * 100);
