@@ -404,16 +404,26 @@ async function startCapture() {
       video.parentElement.style.position = 'relative';
     }
 
-    // Position controls above overlay
-    controls.style.bottom = `calc(100% + 5px)`;
+    // Position controls below video
+    controls.style.top = `100%`;
     controls.style.left = '0';
+    controls.style.marginTop = '10px';
 
     // Add elements to DOM
     const container = document.createElement('div');
     container.style.position = 'relative';
+    container.style.display = 'inline-block'; // Keep video and controls together
+    container.appendChild(video);
     container.appendChild(controls);
     container.appendChild(overlay);
-    video.parentElement.appendChild(container);
+    
+    // Replace video in DOM with our container
+    video.parentElement.insertBefore(container, video);
+    video.parentElement.removeChild(video);
+    
+    // Make controls non-interactive with video
+    controls.style.pointerEvents = 'auto';
+    overlay.style.pointerEvents = 'none';
   }
 
   captureIntervalId = setInterval(captureFrame, 1000);
