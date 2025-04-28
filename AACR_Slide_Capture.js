@@ -320,63 +320,62 @@ async function startCapture() {
     controls.style.padding = '5px';
     controls.style.background = 'rgba(0,0,0,0.7)';
     controls.style.borderRadius = '4px';
-    controls.style.zIndex = '1002'; // Highest z-index
-    controls.style.pointerEvents = 'auto'; // Allow clicks on controls
-    
+    controls.style.zIndex = '1000';
+
     // Width control
     const widthControl = document.createElement('div');
     widthControl.innerHTML = `
       <label style="color:white; font-size:12px">Width %:</label>
-      <input type="number" min="10" max="100" value="${cropWidthPct*100}" 
+      <input type="number" min="10" max="100" value="${cropWidthPct * 100}" 
              style="width:40px" id="crop-width-input">
     `;
-    
+
     // Height control
     const heightControl = document.createElement('div');
     heightControl.innerHTML = `
       <label style="color:white; font-size:12px">Height %:</label>
-      <input type="number" min="10" max="100" value="${cropHeightPct*100}" 
+      <input type="number" min="10" max="100" value="${cropHeightPct * 100}" 
              style="width:40px" id="crop-height-input">
     `;
-    
+
     controls.appendChild(widthControl);
     controls.appendChild(heightControl);
-    
+
     // Create overlay div
     const overlay = document.createElement('div');
     overlay.id = 'capture-overlay';
     overlay.style.position = 'absolute';
+    overlay.style.pointerEvents = 'none';
     overlay.style.border = '3px solid red';
     overlay.style.borderRadius = '4px';
     overlay.style.boxSizing = 'border-box';
-    overlay.style.zIndex = '1001'; // Above video but below controls
-    
+
     // Function to update crop area
     const updateCropArea = () => {
       try {
         const widthInput = document.getElementById('crop-width-input');
         const heightInput = document.getElementById('crop-height-input');
-        
+
         if (!widthInput || !heightInput || !video) return;
-        
-        const widthPct = Math.min(1, Math.max(0.1, parseInt(widthInput.value)/100));
-        const heightPct = Math.min(1, Math.max(0.1, parseInt(heightInput.value)/100));
-        
+
+        const widthPct = Math.min(1, Math.max(0.1, parseInt(widthInput.value) / 100));
+        const heightPct = Math.min(1, Math.max(0.1, parseInt(heightInput.value) / 100));
+
         // Update input values in case they were out of bounds
         widthInput.value = Math.round(widthPct * 100);
         heightInput.value = Math.round(heightPct * 100);
-        
+
         const videoRect = video.getBoundingClientRect();
         const cropWidth = videoRect.width * widthPct;
         const cropHeight = videoRect.height * heightPct;
         const cropX = videoRect.width - cropWidth;
         const cropY = videoRect.height - cropHeight;
-        
+
         overlay.style.width = `${cropWidth}px`;
         overlay.style.height = `${cropHeight}px`;
         overlay.style.left = `${cropX}px`;
         overlay.style.top = `${cropY}px`;
-        
+
         // Update global crop percentages
         cropWidthPct = widthPct;
         cropHeightPct = heightPct;
@@ -384,32 +383,31 @@ async function startCapture() {
         console.error('Error updating crop area:', err);
       }
     };
-    
+
     // Get input elements after they're added to DOM
     const widthInput = widthControl.querySelector('input');
     const heightInput = heightControl.querySelector('input');
-    
+
     if (widthInput && heightInput) {
       // Add event listeners to inputs
       widthInput.addEventListener('change', updateCropArea);
       heightInput.addEventListener('change', updateCropArea);
-      
+
       // Initial positioning
       updateCropArea();
     } else {
       console.error('Could not find crop percentage inputs');
     }
-    
-    // Make video container relative positioned and adjust z-index
+
+    // Make video container relative positioned if it isn't already
     if (getComputedStyle(video.parentElement).position === 'static') {
       video.parentElement.style.position = 'relative';
     }
-    video.style.zIndex = '1000'; // Ensure video is below overlay and controls
-    
+
     // Position controls above overlay
     controls.style.bottom = `calc(100% + 5px)`;
     controls.style.left = '0';
-    
+
     // Add elements to DOM
     const container = document.createElement('div');
     container.style.position = 'relative';
