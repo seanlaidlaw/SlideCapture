@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Video Frame Capture</title>
+    <style>
+        body {
+            width: 300px;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+        }
+
+        button {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #toggleCapture {
+            background-color: #4CAF50;
+        }
+
+        #toggleCapture.stopped {
+            background-color: #f44336;
+        }
+
+        #downloadFrames {
+            background-color: #2196F3;
+        }
+
+        #downloadFrames:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button:hover:not(:disabled) {
+            opacity: 0.9;
+        }
+
+        #status {
+            margin-top: 10px;
+            padding: 5px;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        #frameCount {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+
+        .error {
+            color: red;
+            font-size: 12px;
+            margin-top: 5px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="toggleCapture">Start Capture</button>
+    <button id="downloadFrames" disabled>Download Frames</button>
+    <div id="frameCount"></div>
+    <div id="status"></div>
+    <div id="error" class="error"></div>
+
+    <script src="jszip.min.js"></script>
+    <script src="jszip-check.js"></script>
+    <script src="popup.js"></script>
+</body>
+
+</html>
