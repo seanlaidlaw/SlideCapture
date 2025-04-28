@@ -15,6 +15,22 @@ function debugLog(message, data = null) {
     chrome.runtime.sendMessage({ type: 'DEBUG_LOG', message, data }).catch(() => { });
 }
 
+// Add red border to video element
+function highlightVideo(videoElement) {
+    if (!videoElement) return;
+    videoElement.style.border = '3px solid red';
+    videoElement.style.boxSizing = 'border-box';
+    debugLog('Video highlighted');
+}
+
+// Remove border from video element
+function unhighlightVideo(videoElement) {
+    if (!videoElement) return;
+    videoElement.style.border = '';
+    videoElement.style.boxSizing = '';
+    debugLog('Video unhighlighted');
+}
+
 // Create a thumbnail of the video frame
 function createThumbnail(canvas, video) {
     const ctx = canvas.getContext('2d');
@@ -67,6 +83,7 @@ function startCapture() {
     }
 
     isCapturing = true;
+    highlightVideo(video);
     const canvas = document.createElement('canvas');
     lastFrameData = null;
 
@@ -78,6 +95,7 @@ function startCapture() {
                 stopCapture();
                 return;
             }
+            highlightVideo(video);
         }
 
         try {
@@ -130,12 +148,10 @@ function startCapture() {
 function stopCapture() {
     if (!isCapturing) return;
 
-    if (captureInterval) {
-        clearInterval(captureInterval);
-        captureInterval = null;
-    }
-
+    clearInterval(captureInterval);
     isCapturing = false;
+    unhighlightVideo(video);
+    video = null;
     lastFrameData = null;
     debugLog('Stopped capturing frames');
 }
