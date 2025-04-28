@@ -1,8 +1,11 @@
 {
     "manifest_version": 3,
-    "name": "Video Frame Capture",
+    "name": "SlideCapture",
     "version": "1.0",
-    "description": "Advanced Automatic Content Recognition Extension",
+    "description": "Capture slides from video streams with automatic duplicate detection",
+    "icons": {
+        "128": "img/icon.png"
+    },
     "permissions": [
         "activeTab",
         "storage",
@@ -28,7 +31,10 @@
         }
     ],
     "action": {
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": {
+            "128": "img/icon.png"
+        }
     },
     "web_accessible_resources": [
         {

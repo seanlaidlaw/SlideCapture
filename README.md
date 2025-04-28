@@ -1,31 +1,52 @@
-# ZoomSlideCapture
+<img src="img/SlideCaptureBanner.png" width="380" alt="FactYou">
 
-Javascript userscript for capturing screen share from a Zoom meeting connected through web browser.
+# SlideCapture
+
+A Chrome extension for capturing the shared slides from a streaming feed (such as that from a conference live stream or a zoom call).
+
+It works by detecting the video element on the page and then capturing the current frame from that video, every second. 
+To not save the same slide twice, it uses [perceptual hashing](https://en.wikipedia.org/wiki/Perceptual_hashing) to detect when a frame has changed more than 5%. 
+Once video is playing, press "Start Capture" to start capturing the shared slides. When finished, press "Download All Frames" to download all the captured frames as a ZIP file.
+For best results, set the video quality as high as possible in the video player.
+
+Illustrative example from the live stream of a conference:
+
+![Screenshot of SlideCapture](img/screenshot.png)
+
+## Advanced Features
+
+Pressing the advanced options will allow specifying the crop direction and the width and height percentages of the captured frame (if for example only part of the video feed is the slides, and the rest is a header or banner)
+
+- Customizable frame cropping
+- Multiple crop directions (9 positions)
+- Adjustable width and height percentages
 
 
-## Installation
+## Installation ⚙️ (Manual)
 
-### Chrome
+Since this extension is not available on the Chrome Web Store (I did not want to pay Google), follow these steps to install it manually:
 
-Download the [Tampermonkey
-](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=en) chrome extension and open up its dashboard page.
+1. Download or clone this repository to your local machine
+2. Open Chrome and navigate to `chrome://extensions/`
+3. Enable "Developer mode" by toggling the switch in the top-right corner
+4. Click "Load unpacked" and select the extension directory
+5. The extension should now be installed and visible in your Chrome toolbar
 
-Navigate to Utilities tab and paste the URL of this repo's javascript file in the 'Install from URL'
-box and press install:
+## Usage 🚀
 
-```
-https://raw.githubusercontent.com/seanlaidlaw/ZoomSlideCapture/master/ZoomSlideCapture.js
-```
+1. Navigate to a webpage containing video content
+2. Click the extension icon in your Chrome toolbar to open the popup
+3. Click "Start Capture" to begin capturing frames
+4. Use the advanced options to customize capture settings:
+   - Select crop direction (9 positions available)
+   - Adjust width and height percentages
+5. Click "Stop Capture" when you're done
+6. Use "Download All Frames" to save all captured frames as a ZIP file
 
-Once you press the install button, and verify the installation, it'll load a
-"Start Capture" button on the Zoom Call when connected through chrome. Pressing
-this will start capturing the shared screen every second.
 
-It uses [perceptual
-hashes](https://en.wikipedia.org/wiki/Perceptual_hashing) to avoid duplicating
-images when the screen has only slightly changed. The current threshold for
-this is if the image has changed by more than 15%.
+## Contribute 🧑‍🏫
+I have only tested this on one conference so far, so I am sure there are some edge cases that are not handled.
+If you find any issues, please let me know or create a pull request.
 
-When you want to stop capturing screen sharing pressing the same button again
-will stop the loop capturing the screen and will compress the multiple captured
-images into a single zip file which will be downloaded to your device.
+## License 📝
+This project is licensed under the [GPLv3](https://choosealicense.com/licenses/gpl-3.0/) license. See the LICENSE file for details.

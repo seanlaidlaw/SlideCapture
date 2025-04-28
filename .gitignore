@@ -1,2 +1,5 @@
 .aider*
 ImagesTests/
+node_modules/
+README.html
+README_files/

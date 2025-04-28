@@ -1,0 +1,13 @@
+{
+    "name": "aacr-extension-tests",
+    "version": "1.0.0",
+    "description": "Tests for AACR Extension image similarity detection",
+    "main": "test_similarity.js",
+    "scripts": {
+        "test": "node test_similarity.js"
+    },
+    "dependencies": {
+        "canvas": "^2.11.2",
+        "sharp": "^0.33.2"
+    }
+}
