@@ -13,6 +13,8 @@ Module.printErr = msg => {
 // ——————————————————————————————————————————————————————————
 
 let video = null;
+let isWaitingForData = false;
+
 const images = [];
 const imageHashes = [];
 let captureIntervalId = null;
@@ -53,6 +55,14 @@ function selectDefaultVideo() {
     video = videos[0];
     console.log('🎬 Selected default video:', video);
   }
+
+  // once `video` is set we add listener to change flag when video is buffering
+  video.addEventListener("waiting", () => {
+    isWaitingForData = true;
+  });
+  video.addEventListener("playing", () => {
+    isWaitingForData = false;
+  });
 }
 
 async function ensurePHash() {
@@ -114,6 +124,13 @@ async function captureFrame() {
     captureIntervalId = null;
     return;
   }
+
+  // skip processing if video buffering
+  if (isWaitingForData) {
+    // console.log("⏭️ Skipped frame because video is waiting for data");
+    return;
+  }
+
   if (video.paused || video.ended) {
     console.log('⏹ Video paused/ended; stopping capture.');
     clearInterval(captureIntervalId);
@@ -168,7 +185,7 @@ async function captureFrame() {
       }
     }
     if (identical) {
-      console.log('⚪ Thumbnail unchanged; skipping pHash');
+      // console.log('⚪ Thumbnail unchanged; skipping pHash');
       return;
     }
   }
@@ -176,8 +193,9 @@ async function captureFrame() {
   previousThumbData = thumbData;
 
   // 6) encode and run pHash only when content changed
-  const croppedDataURL = cropCanvas.toDataURL('image/png');
-  const file = dataURLtoFile(croppedDataURL, `frame-${Date.now()}.png`);
+  const croppedWebpDataURL = cropCanvas.toDataURL('image/webp', 0.9);
+  const croppedPNGDataURL = cropCanvas.toDataURL('image/png');
+  const file = dataURLtoFile(croppedPNGDataURL, `frame-${Date.now()}.png`);
 
   // compute pHash
   try {
@@ -188,10 +206,10 @@ async function captureFrame() {
 
     if (!previousHash || similarity < 95) {
       imageHashes.push(currentHash);
-      images.push(croppedDataURL);
+      images.push(croppedWebpDataURL);
       console.log(`✅ Captured #${images.length} (sim=${similarity.toFixed(1)}%)`);
     } else {
-      console.log(`⚪ Skipped duplicate frame (sim=${similarity.toFixed(1)}%)`);
+      // console.log(`⚪ Skipped duplicate frame (sim=${similarity.toFixed(1)}%)`);
     }
   } catch (err) {
     console.error('pHash error:', err);
@@ -226,9 +244,8 @@ async function endCapture() {
   const imgFolder = zip.folder('images');
 
   images.forEach((dataURL, idx) => {
-    // strip off "data:image/png;base64,"
     const base64 = dataURL.split(',')[1];
-    imgFolder.file(`frame-${idx + 1}.png`, base64, { base64: true });
+    imgFolder.file(`frame-${idx + 1}.webp`, base64, { base64: true });
   });
 
   const blob = await zip.generateAsync({ type: 'blob' });
