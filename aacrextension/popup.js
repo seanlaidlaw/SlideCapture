@@ -171,7 +171,9 @@ function saveSettings() {
 
 function displayFrames() {
     frameContainer.innerHTML = '';
-    capturedFrames.forEach((frame, index) => {
+    // Create a copy of the frames array and reverse it
+    const reversedFrames = [...capturedFrames].reverse();
+    reversedFrames.forEach((frame, index) => {
         const frameItem = document.createElement('div');
         frameItem.className = 'frame-item';
 
