@@ -1,11 +1,17 @@
+const similarity_threshold = 95;
+
+// proportional crop of video element
+const cropWidthPct = 0.75; // 75% of width
+const cropHeightPct = 0.75; // 75% of height
+
+// ——————————————————————————————————————————————————————————
+// 1) Global state
+// ——————————————————————————————————————————————————————————
 // Create a Trusted Types policy (do this once, at the top of your script)
 window.trustedTypesPolicy = window.trustedTypes?.createPolicy('default', {
   createScriptURL: (url) => url
 });
 
-// ——————————————————————————————————————————————————————————
-// 1) Global state
-// ——————————————————————————————————————————————————————————
 
 let video = null;
 let isWaitingForData = false;
@@ -18,10 +24,6 @@ let captureVideoElement = null; // ← user-selected override
 // Global canvases for video frame, cropped area, and thumbnail
 const sharedCanvas = document.createElement('canvas');
 const sharedCtx = sharedCanvas.getContext('2d');
-
-// 2) compute proportional crop: bottom-right ~75% width, ~75% height
-const cropWidthPct = 0.75; // 75% of width
-const cropHeightPct = 0.75; // 75% of height
 
 
 const cropCanvas = document.createElement('canvas');
@@ -77,10 +79,10 @@ function pollForVideoAndStartCapture() {
   if (videoDetectionIntervalId !== null) {
     clearInterval(videoDetectionIntervalId); // Clear any existing interval
   }
-  
+
   pollStartTime = Date.now();
   showNoVideoBanner(); // Show immediately
-  
+
   videoDetectionIntervalId = setInterval(() => {
     // Check if we've exceeded max poll time
     if (Date.now() - pollStartTime > MAX_POLL_TIME) {
@@ -95,10 +97,10 @@ function pollForVideoAndStartCapture() {
     const videos = document.querySelectorAll('video');
     if (videos.length > 0) {
       // Check if any video has actual content
-      const hasContent = Array.from(videos).some(v => 
+      const hasContent = Array.from(videos).some(v =>
         v.readyState > 0 && v.videoWidth > 0 && v.videoHeight > 0
       );
-      
+
       if (hasContent) {
         removeNoVideoBanner();
         selectDefaultVideo();
@@ -282,7 +284,7 @@ async function captureFrame() {
     const previousHash = imageHashes[imageHashes.length - 1] || null;
     const similarity = calcSimilarity(currentHash, previousHash);
 
-    if (!previousHash || similarity < 95) {
+    if (!previousHash || similarity < similarity_threshold) {
       imageHashes.push(currentHash);
       images.push(croppedWebpDataURL);
       console.log(`✅ Captured #${images.length} (sim=${similarity.toFixed(1)}%)`);
