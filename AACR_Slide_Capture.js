@@ -352,31 +352,52 @@ async function startCapture() {
     
     // Function to update crop area
     const updateCropArea = () => {
-      const widthPct = parseInt(document.getElementById('crop-width-input').value)/100;
-      const heightPct = parseInt(document.getElementById('crop-height-input').value)/100;
-      
-      const videoRect = video.getBoundingClientRect();
-      const cropWidth = videoRect.width * widthPct;
-      const cropHeight = videoRect.height * heightPct;
-      const cropX = videoRect.width - cropWidth;
-      const cropY = videoRect.height - cropHeight;
-      
-      overlay.style.width = `${cropWidth}px`;
-      overlay.style.height = `${cropHeight}px`;
-      overlay.style.left = `${cropX}px`;
-      overlay.style.top = `${cropY}px`;
-      
-      // Update global crop percentages
-      cropWidthPct = widthPct;
-      cropHeightPct = heightPct;
+      try {
+        const widthInput = document.getElementById('crop-width-input');
+        const heightInput = document.getElementById('crop-height-input');
+        
+        if (!widthInput || !heightInput || !video) return;
+        
+        const widthPct = Math.min(1, Math.max(0.1, parseInt(widthInput.value)/100);
+        const heightPct = Math.min(1, Math.max(0.1, parseInt(heightInput.value)/100);
+        
+        // Update input values in case they were out of bounds
+        widthInput.value = Math.round(widthPct * 100);
+        heightInput.value = Math.round(heightPct * 100);
+        
+        const videoRect = video.getBoundingClientRect();
+        const cropWidth = videoRect.width * widthPct;
+        const cropHeight = videoRect.height * heightPct;
+        const cropX = videoRect.width - cropWidth;
+        const cropY = videoRect.height - cropHeight;
+        
+        overlay.style.width = `${cropWidth}px`;
+        overlay.style.height = `${cropHeight}px`;
+        overlay.style.left = `${cropX}px`;
+        overlay.style.top = `${cropY}px`;
+        
+        // Update global crop percentages
+        cropWidthPct = widthPct;
+        cropHeightPct = heightPct;
+      } catch (err) {
+        console.error('Error updating crop area:', err);
+      }
     };
     
-    // Add event listeners to inputs
-    widthControl.querySelector('input').addEventListener('change', updateCropArea);
-    heightControl.querySelector('input').addEventListener('change', updateCropArea);
+    // Get input elements after they're added to DOM
+    const widthInput = widthControl.querySelector('input');
+    const heightInput = heightControl.querySelector('input');
     
-    // Initial positioning
-    updateCropArea();
+    if (widthInput && heightInput) {
+      // Add event listeners to inputs
+      widthInput.addEventListener('change', updateCropArea);
+      heightInput.addEventListener('change', updateCropArea);
+      
+      // Initial positioning
+      updateCropArea();
+    } else {
+      console.error('Could not find crop percentage inputs');
+    }
     
     // Make video container relative positioned if it isn't already
     if (getComputedStyle(video.parentElement).position === 'static') {
