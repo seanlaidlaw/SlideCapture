@@ -1,12 +1,7 @@
-// ——————————————————————————————————————————————————————————
-// 0) Suppress ImageMagick ‘colors.xml’ warnings
-// ——————————————————————————————————————————————————————————
-window.Module = window.Module || {};
-Module.printErr = msg => {
-  if (!msg.includes("UnableToOpenConfigureFile")) {
-    console.error(msg);
-  }
-};
+// Create a Trusted Types policy (do this once, at the top of your script)
+window.trustedTypesPolicy = window.trustedTypes?.createPolicy('default', {
+  createScriptURL: (url) => url
+});
 
 // ——————————————————————————————————————————————————————————
 // 1) Global state
@@ -32,16 +27,61 @@ const cropHeightPct = 0.75; // 75% of height
 const cropCanvas = document.createElement('canvas');
 cropCanvas.width = 962;
 cropCanvas.height = 543;
-const cropCtx = cropCanvas.getContext('2d');
+const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
 
 const thumbCanvas = document.createElement('canvas');
 thumbCanvas.width = thumbCanvas.height = 64;
-const thumbCtx = thumbCanvas.getContext('2d');
+const thumbCtx = thumbCanvas.getContext('2d', { willReadFrequently: true });
 
 // Previous thumbnail to compare frames
 let previousThumbData = null;
 
+// ——————————————————————————————————————————————————————————
+// 0) Video detection banner and polling
+// ——————————————————————————————————————————————————————————
+let videoDetectionIntervalId = null;
+let videoBanner = null;
 
+function showNoVideoBanner() {
+  if (videoBanner) return; // already shown
+  videoBanner = document.createElement('div');
+  videoBanner.textContent = '⚠️ No <video> element found on this page.';
+  videoBanner.style.position = 'fixed';
+  videoBanner.style.top = '0';
+  videoBanner.style.left = '0';
+  videoBanner.style.width = '100%';
+  videoBanner.style.background = '#ffcc00';
+  videoBanner.style.color = '#222';
+  videoBanner.style.fontWeight = 'bold';
+  videoBanner.style.fontSize = '18px';
+  videoBanner.style.textAlign = 'center';
+  videoBanner.style.padding = '12px 0';
+  videoBanner.style.zIndex = '99999';
+  document.body.appendChild(videoBanner);
+}
+
+function removeNoVideoBanner() {
+  if (videoBanner) {
+    videoBanner.remove();
+    videoBanner = null;
+  }
+}
+
+function pollForVideoAndStartCapture() {
+  if (videoDetectionIntervalId !== null) return; // already polling
+  videoDetectionIntervalId = setInterval(() => {
+    const videos = document.querySelectorAll('video');
+    if (videos.length > 0) {
+      removeNoVideoBanner();
+      clearInterval(videoDetectionIntervalId);
+      videoDetectionIntervalId = null;
+      selectDefaultVideo();
+      startCapture();
+    } else {
+      showNoVideoBanner();
+    }
+  }, 1000);
+}
 
 // ——————————————————————————————————————————————————————————
 // 2) Helpers
@@ -51,6 +91,7 @@ function selectDefaultVideo() {
   if (videos.length === 0) {
     console.warn('⚠️ No <video> elements found on page.');
     video = null;
+    return; // don't add listeners if not found
   } else {
     video = videos[0];
     console.log('🎬 Selected default video:', video);
@@ -69,7 +110,12 @@ async function ensurePHash() {
   if (typeof pHash === 'undefined') {
     await new Promise(resolve => {
       const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/phash-js/dist/phash.js';
+      const url = 'https://cdn.jsdelivr.net/npm/phash-js/dist/phash.js';
+      if (window.trustedTypesPolicy) {
+        s.src = window.trustedTypesPolicy.createScriptURL(url);
+      } else {
+        s.src = url;
+      }
       s.onload = resolve;
       document.head.appendChild(s);
     });
@@ -80,7 +126,12 @@ async function ensureJSZip() {
   if (typeof JSZip === 'undefined') {
     await new Promise(resolve => {
       const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js';
+      const url = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js';
+      if (window.trustedTypesPolicy) {
+        s.src = window.trustedTypesPolicy.createScriptURL(url);
+      } else {
+        s.src = url;
+      }
       s.onload = resolve;
       document.head.appendChild(s);
     });
@@ -263,3 +314,8 @@ async function endCapture() {
   URL.revokeObjectURL(url);
   console.log('✅ All frames zipped and download started');
 }
+
+// ——————————————————————————————————————————————————————————
+// 5) Auto-initiate video polling on script load
+// ——————————————————————————————————————————————————————————
+pollForVideoAndStartCapture();
