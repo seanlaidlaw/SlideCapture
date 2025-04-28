@@ -41,11 +41,13 @@ let previousThumbData = null;
 // ——————————————————————————————————————————————————————————
 let videoDetectionIntervalId = null;
 let videoBanner = null;
+const MAX_POLL_TIME = 300000; // 5 minutes max polling
+let pollStartTime = null;
 
 function showNoVideoBanner() {
   if (videoBanner) return; // already shown
   videoBanner = document.createElement('div');
-  videoBanner.textContent = '⚠️ No <video> element found on this page.';
+  videoBanner.innerHTML = '⚠️ Waiting for video content...<br><small>This banner will disappear when video is detected</small>';
   videoBanner.style.position = 'fixed';
   videoBanner.style.top = '0';
   videoBanner.style.left = '0';
@@ -65,18 +67,43 @@ function removeNoVideoBanner() {
     videoBanner.remove();
     videoBanner = null;
   }
+  if (videoDetectionIntervalId) {
+    clearInterval(videoDetectionIntervalId);
+    videoDetectionIntervalId = null;
+  }
 }
 
 function pollForVideoAndStartCapture() {
-  if (videoDetectionIntervalId !== null) return; // already polling
+  if (videoDetectionIntervalId !== null) {
+    clearInterval(videoDetectionIntervalId); // Clear any existing interval
+  }
+  
+  pollStartTime = Date.now();
+  showNoVideoBanner(); // Show immediately
+  
   videoDetectionIntervalId = setInterval(() => {
-    const videos = document.querySelectorAll('video');
-    if (videos.length > 0) {
-      removeNoVideoBanner();
+    // Check if we've exceeded max poll time
+    if (Date.now() - pollStartTime > MAX_POLL_TIME) {
       clearInterval(videoDetectionIntervalId);
       videoDetectionIntervalId = null;
-      selectDefaultVideo();
-      startCapture();
+      if (videoBanner) {
+        videoBanner.textContent = '⚠️ Video detection timed out after 5 minutes';
+      }
+      return;
+    }
+
+    const videos = document.querySelectorAll('video');
+    if (videos.length > 0) {
+      // Check if any video has actual content
+      const hasContent = Array.from(videos).some(v => 
+        v.readyState > 0 && v.videoWidth > 0 && v.videoHeight > 0
+      );
+      
+      if (hasContent) {
+        removeNoVideoBanner();
+        selectDefaultVideo();
+        startCapture();
+      }
     } else {
       showNoVideoBanner();
     }
