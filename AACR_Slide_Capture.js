@@ -309,11 +309,34 @@ async function startCapture() {
   images.length = 0;
   imageHashes.length = 0;
 
-  // Add red border to video element
+  // Add overlay div to show cropped capture area
   if (video) {
-    video.style.border = '3px solid red';
-    video.style.borderRadius = '4px';
-    video.style.boxSizing = 'border-box';
+    const overlay = document.createElement('div');
+    overlay.id = 'capture-overlay';
+    overlay.style.position = 'absolute';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.border = '3px solid red';
+    overlay.style.borderRadius = '4px';
+    overlay.style.boxSizing = 'border-box';
+    
+    // Position overlay to match crop area
+    const videoRect = video.getBoundingClientRect();
+    const cropWidth = videoRect.width * cropWidthPct;
+    const cropHeight = videoRect.height * cropHeightPct;
+    const cropX = videoRect.width - cropWidth;
+    const cropY = videoRect.height - cropHeight;
+    
+    overlay.style.width = `${cropWidth}px`;
+    overlay.style.height = `${cropHeight}px`;
+    overlay.style.left = `${cropX}px`;
+    overlay.style.top = `${cropY}px`;
+    
+    // Make video container relative positioned if it isn't already
+    if (getComputedStyle(video.parentElement).position === 'static') {
+      video.parentElement.style.position = 'relative';
+    }
+    
+    video.parentElement.appendChild(overlay);
   }
 
   captureIntervalId = setInterval(captureFrame, 1000);
@@ -326,10 +349,10 @@ async function endCapture() {
     captureIntervalId = null;
   }
 
-  // Remove red border from video element
-  if (video) {
-    video.style.border = '';
-    video.style.borderRadius = '';
+  // Remove capture overlay
+  const overlay = document.getElementById('capture-overlay');
+  if (overlay) {
+    overlay.remove();
   }
 
   console.log(`📥 Zipping ${images.length} frames…`);
