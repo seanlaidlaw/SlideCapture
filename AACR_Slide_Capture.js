@@ -215,6 +215,7 @@ async function captureFrame() {
     console.log('⏹ Video paused/ended; stopping capture.');
     clearInterval(captureIntervalId);
     captureIntervalId = null;
+    endCapture()
     return;
   }
 
@@ -307,14 +308,14 @@ async function startCapture() {
   }
   images.length = 0;
   imageHashes.length = 0;
-  
+
   // Add red border to video element
   if (video) {
     video.style.border = '3px solid red';
     video.style.borderRadius = '4px';
     video.style.boxSizing = 'border-box';
   }
-  
+
   captureIntervalId = setInterval(captureFrame, 1000);
   console.log('🟢 Started capturing unique frames every second');
 }
@@ -324,7 +325,7 @@ async function endCapture() {
     clearInterval(captureIntervalId);
     captureIntervalId = null;
   }
-  
+
   // Remove red border from video element
   if (video) {
     video.style.border = '';
