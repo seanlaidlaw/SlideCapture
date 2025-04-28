@@ -1,8 +1,8 @@
 const similarity_threshold = 95;
 
 // proportional crop of video element
-const cropWidthPct = 0.75; // 75% of width
-const cropHeightPct = 0.75; // 75% of height
+let cropWidthPct = 0.75; // 75% of width
+let cropHeightPct = 0.75; // 75% of height
 
 // ——————————————————————————————————————————————————————————
 // 1) Global state
@@ -311,6 +311,37 @@ async function startCapture() {
 
   // Add overlay div to show cropped capture area
   if (video) {
+    // Create controls container
+    const controls = document.createElement('div');
+    controls.id = 'crop-controls';
+    controls.style.position = 'absolute';
+    controls.style.display = 'flex';
+    controls.style.gap = '10px';
+    controls.style.padding = '5px';
+    controls.style.background = 'rgba(0,0,0,0.7)';
+    controls.style.borderRadius = '4px';
+    controls.style.zIndex = '1000';
+    
+    // Width control
+    const widthControl = document.createElement('div');
+    widthControl.innerHTML = `
+      <label style="color:white; font-size:12px">Width %:</label>
+      <input type="number" min="10" max="100" value="${cropWidthPct*100}" 
+             style="width:40px" id="crop-width-input">
+    `;
+    
+    // Height control
+    const heightControl = document.createElement('div');
+    heightControl.innerHTML = `
+      <label style="color:white; font-size:12px">Height %:</label>
+      <input type="number" min="10" max="100" value="${cropHeightPct*100}" 
+             style="width:40px" id="crop-height-input">
+    `;
+    
+    controls.appendChild(widthControl);
+    controls.appendChild(heightControl);
+    
+    // Create overlay div
     const overlay = document.createElement('div');
     overlay.id = 'capture-overlay';
     overlay.style.position = 'absolute';
@@ -319,24 +350,49 @@ async function startCapture() {
     overlay.style.borderRadius = '4px';
     overlay.style.boxSizing = 'border-box';
     
-    // Position overlay to match crop area
-    const videoRect = video.getBoundingClientRect();
-    const cropWidth = videoRect.width * cropWidthPct;
-    const cropHeight = videoRect.height * cropHeightPct;
-    const cropX = videoRect.width - cropWidth;
-    const cropY = videoRect.height - cropHeight;
+    // Function to update crop area
+    const updateCropArea = () => {
+      const widthPct = parseInt(document.getElementById('crop-width-input').value)/100;
+      const heightPct = parseInt(document.getElementById('crop-height-input').value)/100;
+      
+      const videoRect = video.getBoundingClientRect();
+      const cropWidth = videoRect.width * widthPct;
+      const cropHeight = videoRect.height * heightPct;
+      const cropX = videoRect.width - cropWidth;
+      const cropY = videoRect.height - cropHeight;
+      
+      overlay.style.width = `${cropWidth}px`;
+      overlay.style.height = `${cropHeight}px`;
+      overlay.style.left = `${cropX}px`;
+      overlay.style.top = `${cropY}px`;
+      
+      // Update global crop percentages
+      cropWidthPct = widthPct;
+      cropHeightPct = heightPct;
+    };
     
-    overlay.style.width = `${cropWidth}px`;
-    overlay.style.height = `${cropHeight}px`;
-    overlay.style.left = `${cropX}px`;
-    overlay.style.top = `${cropY}px`;
+    // Add event listeners to inputs
+    widthControl.querySelector('input').addEventListener('change', updateCropArea);
+    heightControl.querySelector('input').addEventListener('change', updateCropArea);
+    
+    // Initial positioning
+    updateCropArea();
     
     // Make video container relative positioned if it isn't already
     if (getComputedStyle(video.parentElement).position === 'static') {
       video.parentElement.style.position = 'relative';
     }
     
-    video.parentElement.appendChild(overlay);
+    // Position controls above overlay
+    controls.style.bottom = `calc(100% + 5px)`;
+    controls.style.left = '0';
+    
+    // Add elements to DOM
+    const container = document.createElement('div');
+    container.style.position = 'relative';
+    container.appendChild(controls);
+    container.appendChild(overlay);
+    video.parentElement.appendChild(container);
   }
 
   captureIntervalId = setInterval(captureFrame, 1000);
@@ -349,10 +405,10 @@ async function endCapture() {
     captureIntervalId = null;
   }
 
-  // Remove capture overlay
-  const overlay = document.getElementById('capture-overlay');
-  if (overlay) {
-    overlay.remove();
+  // Remove capture overlay and controls
+  const container = video?.parentElement?.querySelector('div[style*="position: relative"]');
+  if (container) {
+    container.remove();
   }
 
   console.log(`📥 Zipping ${images.length} frames…`);
