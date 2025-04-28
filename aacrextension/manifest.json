@@ -2,11 +2,12 @@
     "manifest_version": 3,
     "name": "Video Frame Capture",
     "version": "1.0",
-    "description": "Capture frames from videos in cross-origin iframes",
+    "description": "Advanced Automatic Content Recognition Extension",
     "permissions": [
         "activeTab",
+        "storage",
         "scripting",
-        "storage"
+        "tabs"
     ],
     "host_permissions": [
         "<all_urls>"

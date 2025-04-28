@@ -1,32 +1,42 @@
 let capturedFrames = [];
 let isCapturing = false;
+let selectedDirection = 'bottom-right';
+let widthPercentage = 100;
+let heightPercentage = 100;
+
+// DOM Elements
+const startCaptureBtn = document.getElementById('startCapture');
+const stopCaptureBtn = document.getElementById('stopCapture');
+const downloadAllBtn = document.getElementById('downloadAll');
+const toggleAdvancedBtn = document.getElementById('toggleAdvanced');
+const advancedOptions = document.getElementById('advancedOptions');
+const frameContainer = document.getElementById('frameContainer');
+const widthPercentageInput = document.getElementById('widthPercentage');
+const heightPercentageInput = document.getElementById('heightPercentage');
+const cropDirectionButtons = document.querySelectorAll('.crop-direction button');
 
 // Debug logging function
 function debugLog(message, data = null) {
     const logMessage = `[AACR Popup] ${message}`;
     console.log(logMessage, data || '');
-    document.getElementById('status').textContent = message;
+}
+
+// Get the active tab
+async function getActiveTab() {
+    try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        return tabs[0];
+    } catch (error) {
+        console.error('Error getting active tab:', error);
+        return null;
+    }
 }
 
 // Update UI based on current state
 function updateUI() {
-    const toggleButton = document.getElementById('toggleCapture');
-    const downloadButton = document.getElementById('downloadFrames');
-    const frameCount = document.getElementById('frameCount');
-
-    // Update toggle button
-    toggleButton.textContent = isCapturing ? 'Stop Capture' : 'Start Capture';
-    toggleButton.classList.toggle('stopped', isCapturing);
-
-    // Update download button
-    downloadButton.disabled = capturedFrames.length === 0;
-
-    // Update frame count
-    if (capturedFrames.length > 0) {
-        frameCount.textContent = `${capturedFrames.length} frames ready to download`;
-    } else {
-        frameCount.textContent = '';
-    }
+    startCaptureBtn.disabled = isCapturing;
+    stopCaptureBtn.disabled = !isCapturing;
+    downloadAllBtn.disabled = capturedFrames.length === 0;
 }
 
 // Get frames from background script
@@ -40,6 +50,7 @@ function getFrames() {
         }
         capturedFrames = response?.frames || [];
         updateUI();
+        displayFrames();
     });
 }
 
@@ -57,93 +68,154 @@ function getCaptureState() {
     });
 }
 
-// Toggle capture state
-document.getElementById('toggleCapture').addEventListener('click', () => {
-    const messageType = isCapturing ? 'STOP_CAPTURE' : 'START_CAPTURE';
-    debugLog(isCapturing ? 'Stopping capture...' : 'Starting capture...');
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    // Load saved settings
+    chrome.storage.local.get(['cropSettings'], (result) => {
+        if (result.cropSettings) {
+            selectedDirection = result.cropSettings.direction || 'bottom-right';
+            widthPercentage = result.cropSettings.widthPercentage || 100;
+            heightPercentage = result.cropSettings.heightPercentage || 100;
 
-    chrome.runtime.sendMessage({ type: messageType }, (response) => {
-        if (chrome.runtime.lastError) {
-            if (chrome.runtime.lastError.message !== 'The message port closed before a response was received.') {
-                debugLog('Error:', chrome.runtime.lastError);
-            }
-            return;
+            // Update UI
+            widthPercentageInput.value = widthPercentage;
+            heightPercentageInput.value = heightPercentage;
+            updateDirectionButtons();
         }
-        // Update state based on response
-        if (response?.success) {
-            isCapturing = !isCapturing;
+    });
+
+    // Get initial capture state
+    getCaptureState();
+
+    // Get existing frames
+    getFrames();
+});
+
+// Event Listeners
+startCaptureBtn.addEventListener('click', async () => {
+    const tab = await getActiveTab();
+    if (!tab) {
+        console.error('No active tab found');
+        return;
+    }
+
+    saveSettings();
+    chrome.runtime.sendMessage({
+        type: 'START_CAPTURE',
+        tabId: tab.id
+    }, response => {
+        if (response && response.success) {
+            isCapturing = true;
             updateUI();
-            debugLog(isCapturing ? 'Capture started' : 'Capture stopped');
         } else {
-            debugLog('Failed to ' + (isCapturing ? 'stop' : 'start') + ' capture');
+            console.error('Failed to start capture:', response?.error);
         }
     });
 });
 
-document.getElementById('downloadFrames').addEventListener('click', () => {
-    getFrames(); // Refresh frames from background
-
-    if (capturedFrames.length === 0) {
-        debugLog('No frames captured yet');
-        return;
-    }
-
-    debugLog(`Preparing to download ${capturedFrames.length} frames`);
-
-    try {
-        // Check if JSZip is available
-        if (typeof JSZip === 'undefined') {
-            console.error('JSZip is undefined');
-            throw new Error('JSZip library not loaded. Please reload the extension.');
+stopCaptureBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' }, (response) => {
+        if (response.success) {
+            isCapturing = false;
+            updateUI();
         }
-
-        // Verify JSZip methods
-        if (typeof JSZip.prototype.file !== 'function') {
-            console.error('JSZip.file is not a function');
-            throw new Error('JSZip library is not properly initialized');
-        }
-
-        // Create zip file
-        const zip = new JSZip();
-        console.log('Created JSZip instance:', zip);
-
-        // Add each frame to the zip
-        capturedFrames.forEach((frame, index) => {
-            try {
-                const base64 = frame.imageData.split(',')[1];
-                console.log(`Adding frame ${index + 1}, size: ${base64.length}`);
-                zip.file(`frame-${index + 1}.webp`, base64, { base64: true });
-            } catch (error) {
-                console.error(`Error adding frame ${index + 1}:`, error);
-            }
-        });
-
-        // Generate and download the zip
-        console.log('Generating zip file...');
-        zip.generateAsync({ type: 'blob' })
-            .then((content) => {
-                console.log('Zip generated, size:', content.size);
-                const url = URL.createObjectURL(content);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'frames.zip';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                debugLog('Download started');
-            })
-            .catch(error => {
-                console.error('Error generating zip:', error);
-                debugLog('Error creating zip:', error);
-                document.getElementById('error').textContent = `Error creating zip: ${error.message}`;
-            });
-    } catch (error) {
-        console.error('Error in download process:', error);
-        debugLog('Error preparing download:', error);
-        document.getElementById('error').textContent = `Error: ${error.message}`;
-    }
+    });
 });
+
+downloadAllBtn.addEventListener('click', downloadAllFrames);
+
+toggleAdvancedBtn.addEventListener('click', () => {
+    advancedOptions.classList.toggle('hidden');
+    toggleAdvancedBtn.textContent = advancedOptions.classList.contains('hidden')
+        ? 'Show Advanced Options'
+        : 'Hide Advanced Options';
+});
+
+// Crop direction buttons
+cropDirectionButtons.forEach(button => {
+    button.addEventListener('click', () => {
+        selectedDirection = button.dataset.direction;
+        updateDirectionButtons();
+        saveSettings();
+    });
+});
+
+// Percentage inputs
+widthPercentageInput.addEventListener('change', () => {
+    widthPercentage = Math.min(100, Math.max(10, parseInt(widthPercentageInput.value) || 100));
+    widthPercentageInput.value = widthPercentage;
+    saveSettings();
+});
+
+heightPercentageInput.addEventListener('change', () => {
+    heightPercentage = Math.min(100, Math.max(10, parseInt(heightPercentageInput.value) || 100));
+    heightPercentageInput.value = heightPercentage;
+    saveSettings();
+});
+
+// Helper Functions
+function updateDirectionButtons() {
+    cropDirectionButtons.forEach(button => {
+        button.classList.toggle('active', button.dataset.direction === selectedDirection);
+    });
+}
+
+function saveSettings() {
+    const settings = {
+        direction: selectedDirection,
+        widthPercentage,
+        heightPercentage
+    };
+    chrome.storage.local.set({ cropSettings: settings });
+}
+
+function displayFrames() {
+    frameContainer.innerHTML = '';
+    capturedFrames.forEach((frame, index) => {
+        const frameItem = document.createElement('div');
+        frameItem.className = 'frame-item';
+
+        const img = document.createElement('img');
+        img.src = frame.imageData;
+        img.className = 'frame-preview';
+
+        const timestamp = new Date(frame.timestamp).toLocaleTimeString();
+        const info = document.createElement('div');
+        info.textContent = `${timestamp} (${frame.width}x${frame.height})`;
+        info.style.fontSize = '12px';
+        info.style.marginTop = '5px';
+
+        frameItem.appendChild(img);
+        frameItem.appendChild(info);
+        frameContainer.appendChild(frameItem);
+    });
+}
+
+function downloadAllFrames() {
+    if (capturedFrames.length === 0) return;
+
+    const zip = new JSZip();
+    const folder = zip.folder('captured_frames');
+
+    capturedFrames.forEach((frame, index) => {
+        const timestamp = new Date(frame.timestamp).toISOString().replace(/[:.]/g, '-');
+        const filename = `frame_${timestamp}.webp`;
+
+        // Convert base64 to blob
+        const base64Data = frame.imageData.split(',')[1];
+        folder.file(filename, base64Data, { base64: true });
+    });
+
+    zip.generateAsync({ type: 'blob' })
+        .then(content => {
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'captured_frames.zip';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+}
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -153,8 +225,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         isCapturing = message.isCapturing;
         updateUI();
     }
-});
-
-// Initial load
-getFrames();
-getCaptureState(); 
+}); 

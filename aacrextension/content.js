@@ -4,6 +4,11 @@ let isCapturing = false;
 let captureInterval = null;
 let lastFrameData = null;
 let lastVideoCheck = 0;
+let cropSettings = {
+    direction: 'bottom-right',
+    widthPercentage: 100,
+    heightPercentage: 100
+};
 const VIDEO_CHECK_INTERVAL = 1000; // Check for video every second
 const CAPTURE_INTERVAL = 1000; // Capture every second
 const MIN_SIMILARITY_THRESHOLD = 0.95; // Minimum similarity to consider frames different
@@ -31,15 +36,74 @@ function unhighlightVideo(videoElement) {
     debugLog('Video unhighlighted');
 }
 
+// Calculate crop dimensions based on settings
+function calculateCropDimensions(videoWidth, videoHeight) {
+    const width = Math.floor(videoWidth * (cropSettings.widthPercentage / 100));
+    const height = Math.floor(videoHeight * (cropSettings.heightPercentage / 100));
+
+    let x = 0;
+    let y = 0;
+
+    switch (cropSettings.direction) {
+        case 'top-left':
+            x = 0;
+            y = 0;
+            break;
+        case 'top':
+            x = Math.floor((videoWidth - width) / 2);
+            y = 0;
+            break;
+        case 'top-right':
+            x = videoWidth - width;
+            y = 0;
+            break;
+        case 'left':
+            x = 0;
+            y = Math.floor((videoHeight - height) / 2);
+            break;
+        case 'center':
+            x = Math.floor((videoWidth - width) / 2);
+            y = Math.floor((videoHeight - height) / 2);
+            break;
+        case 'right':
+            x = videoWidth - width;
+            y = Math.floor((videoHeight - height) / 2);
+            break;
+        case 'bottom-left':
+            x = 0;
+            y = videoHeight - height;
+            break;
+        case 'bottom':
+            x = Math.floor((videoWidth - width) / 2);
+            y = videoHeight - height;
+            break;
+        case 'bottom-right':
+            x = videoWidth - width;
+            y = videoHeight - height;
+            break;
+    }
+
+    return { x, y, width, height };
+}
+
 // Create a thumbnail of the video frame
 function createThumbnail(canvas, video) {
     const ctx = canvas.getContext('2d');
     const scale = 0.1; // Create a small thumbnail (10% of original size)
 
-    canvas.width = video.videoWidth * scale;
-    canvas.height = video.videoHeight * scale;
+    // Calculate crop dimensions
+    const crop = calculateCropDimensions(video.videoWidth, video.videoHeight);
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.width = crop.width * scale;
+    canvas.height = crop.height * scale;
+
+    // Draw only the cropped portion
+    ctx.drawImage(
+        video,
+        crop.x, crop.y, crop.width, crop.height, // source rectangle
+        0, 0, canvas.width, canvas.height        // destination rectangle
+    );
+
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
@@ -63,18 +127,45 @@ function calculateSimilarity(hash1, hash2) {
 
 // Find a suitable video element
 function findVideo() {
+    debugLog('Searching for video elements...');
     const videos = document.querySelectorAll('video');
+    debugLog(`Found ${videos.length} video elements`);
+
     for (const v of videos) {
+        debugLog('Checking video element:', {
+            readyState: v.readyState,
+            videoWidth: v.videoWidth,
+            videoHeight: v.videoHeight,
+            src: v.src,
+            currentSrc: v.currentSrc,
+            tagName: v.tagName,
+            id: v.id,
+            className: v.className
+        });
+
         if (v.readyState >= 3 && v.videoWidth > 0 && v.videoHeight > 0) {
+            debugLog('Found suitable video element');
             return v;
         }
     }
+
+    // If no suitable video found, try to find any video element
+    if (videos.length > 0) {
+        debugLog('No suitable video found, using first available video');
+        return videos[0];
+    }
+
+    debugLog('No video elements found');
     return null;
 }
 
 // Start capturing frames
 function startCapture() {
-    if (isCapturing) return;
+    debugLog('startCapture called');
+    if (isCapturing) {
+        debugLog('Already capturing, returning');
+        return;
+    }
 
     video = findVideo();
     if (!video) {
@@ -82,16 +173,26 @@ function startCapture() {
         return;
     }
 
+    // Get current crop settings
+    chrome.storage.local.get(['cropSettings'], (result) => {
+        debugLog('Retrieved crop settings:', result.cropSettings);
+        if (result.cropSettings) {
+            cropSettings = result.cropSettings;
+        }
+    });
+
     isCapturing = true;
     highlightVideo(video);
     const canvas = document.createElement('canvas');
     lastFrameData = null;
 
     captureInterval = setInterval(() => {
+        debugLog('Capture interval triggered');
         if (!video || video.readyState < 3) {
+            debugLog('Video element lost or not ready, finding new one');
             video = findVideo();
             if (!video) {
-                debugLog('Video element lost');
+                debugLog('No video element found, stopping capture');
                 stopCapture();
                 return;
             }
@@ -99,23 +200,33 @@ function startCapture() {
         }
 
         try {
+            debugLog('Attempting to capture frame');
             // Create thumbnail and calculate hash
             const thumbnail = createThumbnail(canvas, video);
             const currentHash = calculatePHash(thumbnail);
+            debugLog('Calculated hash for frame');
 
             // Check if this frame is different from the last one
             if (lastFrameData) {
                 const similarity = calculateSimilarity(currentHash, lastFrameData.hash);
+                debugLog('Frame similarity:', similarity);
                 if (similarity > MIN_SIMILARITY_THRESHOLD) {
+                    debugLog('Frame too similar, skipping');
                     return; // Skip similar frames
                 }
             }
 
-            // Capture the full resolution frame
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            // Capture the full resolution frame with crop
+            const crop = calculateCropDimensions(video.videoWidth, video.videoHeight);
+            debugLog('Calculated crop dimensions:', crop);
+            canvas.width = crop.width;
+            canvas.height = crop.height;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.drawImage(
+                video,
+                crop.x, crop.y, crop.width, crop.height,
+                0, 0, canvas.width, canvas.height
+            );
 
             // Store frame data and send to background
             const imageData = canvas.toDataURL('image/webp', 0.8);
@@ -124,6 +235,7 @@ function startCapture() {
                 timestamp: Date.now()
             };
 
+            debugLog('Sending frame to background');
             chrome.runtime.sendMessage({
                 type: 'FRAME_CAPTURED',
                 data: {
@@ -158,13 +270,15 @@ function stopCapture() {
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    debugLog('Received message', message);
+    debugLog('Content script received message', message);
 
     switch (message.type) {
         case 'START_CAPTURE':
+            debugLog('Starting capture from message');
             startCapture();
             break;
         case 'STOP_CAPTURE':
+            debugLog('Stopping capture from message');
             stopCapture();
             break;
     }
@@ -182,6 +296,7 @@ const observer = new MutationObserver((mutations) => {
                 debugLog('New video element detected', node);
                 if (isCapturing) {
                     video = node;
+                    highlightVideo(video);
                 }
             }
         }

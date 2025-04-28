@@ -10,68 +10,154 @@
             font-family: Arial, sans-serif;
         }
 
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
         button {
-            width: 100%;
             padding: 8px;
-            margin: 5px 0;
+            cursor: pointer;
+            background-color: #4CAF50;
             color: white;
             border: none;
             border-radius: 4px;
-            cursor: pointer;
         }
 
-        #toggleCapture {
-            background-color: #4CAF50;
+        button:hover {
+            background-color: #45a049;
         }
 
-        #toggleCapture.stopped {
-            background-color: #f44336;
-        }
-
-        #downloadFrames {
-            background-color: #2196F3;
-        }
-
-        #downloadFrames:disabled {
+        button:disabled {
             background-color: #cccccc;
             cursor: not-allowed;
         }
 
-        button:hover:not(:disabled) {
-            opacity: 0.9;
+        .frame-container {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 5px;
         }
 
-        #status {
-            margin-top: 10px;
+        .frame-item {
+            margin-bottom: 5px;
             padding: 5px;
+            border: 1px solid #eee;
+            cursor: pointer;
+        }
+
+        .frame-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .frame-preview {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .advanced-options {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
             border-radius: 4px;
-            text-align: center;
+        }
+
+        .advanced-options h3 {
+            margin: 0 0 10px 0;
             font-size: 14px;
         }
 
-        #frameCount {
-            margin-top: 5px;
-            font-size: 12px;
-            color: #666;
-            text-align: center;
+        .crop-direction {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-bottom: 10px;
         }
 
-        .error {
-            color: red;
+        .crop-direction button {
+            padding: 5px;
             font-size: 12px;
-            margin-top: 5px;
-            text-align: center;
+            background-color: #2196F3;
+        }
+
+        .crop-direction button.active {
+            background-color: #0b7dda;
+        }
+
+        .percentage-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .percentage-control {
+            flex: 1;
+        }
+
+        .percentage-control label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .percentage-control input {
+            width: 100%;
+            padding: 5px;
+        }
+
+        .toggle-advanced {
+            margin-top: 10px;
+            background-color: #2196F3;
+            font-size: 12px;
+        }
+
+        .hidden {
+            display: none;
         }
     </style>
 </head>
 
 <body>
-    <button id="toggleCapture">Start Capture</button>
-    <button id="downloadFrames" disabled>Download Frames</button>
-    <div id="frameCount"></div>
-    <div id="status"></div>
-    <div id="error" class="error"></div>
+    <div class="container">
+        <button id="startCapture">Start Capture</button>
+        <button id="stopCapture" disabled>Stop Capture</button>
+        <button id="downloadAll" disabled>Download All Frames</button>
 
+        <button class="toggle-advanced" id="toggleAdvanced">Show Advanced Options</button>
+
+        <div class="advanced-options hidden" id="advancedOptions">
+            <h3>Crop Settings</h3>
+
+            <div class="crop-direction">
+                <button data-direction="top-left">↖</button>
+                <button data-direction="top">↑</button>
+                <button data-direction="top-right">↗</button>
+                <button data-direction="left">←</button>
+                <button data-direction="center">⊙</button>
+                <button data-direction="right">→</button>
+                <button data-direction="bottom-left">↙</button>
+                <button data-direction="bottom">↓</button>
+                <button data-direction="bottom-right">↘</button>
+            </div>
+
+            <div class="percentage-controls">
+                <div class="percentage-control">
+                    <label for="widthPercentage">Width Percentage (%)</label>
+                    <input type="number" id="widthPercentage" min="10" max="100" value="100">
+                </div>
+                <div class="percentage-control">
+                    <label for="heightPercentage">Height Percentage (%)</label>
+                    <input type="number" id="heightPercentage" min="10" max="100" value="100">
+                </div>
+            </div>
+        </div>
+
+        <div class="frame-container" id="frameContainer">
+            <!-- Frames will be added here -->
+        </div>
+    </div>
     <script src="jszip.min.js"></script>
     <script src="jszip-check.js"></script>
     <script src="popup.js"></script>
