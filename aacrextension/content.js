@@ -23,9 +23,66 @@ function debugLog(message, data = null) {
 // Add red border to video element
 function highlightVideo(videoElement) {
     if (!videoElement) return;
-    videoElement.style.border = '3px solid red';
-    videoElement.style.boxSizing = 'border-box';
-    debugLog('Video highlighted');
+
+    // Remove any existing overlay
+    const existingOverlay = document.getElementById('aacr-crop-overlay');
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+
+    // If no crop is applied (100% width and height), just highlight the video
+    if (cropSettings.widthPercentage === 100 && cropSettings.heightPercentage === 100) {
+        videoElement.style.border = '3px solid red';
+        videoElement.style.boxSizing = 'border-box';
+        debugLog('Video highlighted (no crop)');
+        return;
+    }
+
+    // Create overlay for crop area
+    const overlay = document.createElement('div');
+    overlay.id = 'aacr-crop-overlay';
+    overlay.style.position = 'absolute';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.zIndex = '9999';
+    overlay.style.border = '3px solid red';
+    overlay.style.boxSizing = 'border-box';
+
+    // Calculate crop dimensions in video coordinates
+    const crop = calculateCropDimensions(videoElement.videoWidth, videoElement.videoHeight);
+
+    // Get video's display dimensions and position
+    const videoRect = videoElement.getBoundingClientRect();
+
+    // Calculate scale factors
+    const scaleX = videoRect.width / videoElement.videoWidth;
+    const scaleY = videoRect.height / videoElement.videoHeight;
+
+    // Calculate overlay position and size
+    const overlayX = videoRect.left + (crop.x * scaleX);
+    const overlayY = videoRect.top + (crop.y * scaleY);
+    const overlayWidth = crop.width * scaleX;
+    const overlayHeight = crop.height * scaleY;
+
+    // Position the overlay
+    overlay.style.left = `${overlayX}px`;
+    overlay.style.top = `${overlayY}px`;
+    overlay.style.width = `${overlayWidth}px`;
+    overlay.style.height = `${overlayHeight}px`;
+
+    // Add overlay to document
+    document.body.appendChild(overlay);
+    debugLog('Crop area highlighted', {
+        crop,
+        videoRect,
+        scaleX,
+        scaleY,
+        overlayPosition: {
+            x: overlayX,
+            y: overlayY,
+            width: overlayWidth,
+            height: overlayHeight
+        }
+    });
 }
 
 // Remove border from video element
@@ -33,7 +90,48 @@ function unhighlightVideo(videoElement) {
     if (!videoElement) return;
     videoElement.style.border = '';
     videoElement.style.boxSizing = '';
+
+    // Remove crop overlay if it exists
+    const overlay = document.getElementById('aacr-crop-overlay');
+    if (overlay) {
+        overlay.remove();
+    }
+
     debugLog('Video unhighlighted');
+}
+
+// Update highlight when crop settings change
+function updateCropHighlight() {
+    if (isCapturing && video) {
+        highlightVideo(video);
+    }
+}
+
+// Listen for crop settings changes
+chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.cropSettings) {
+        cropSettings = changes.cropSettings.newValue;
+        updateCropHighlight();
+    }
+});
+
+// Also update highlight when video size changes
+const resizeObserver = new ResizeObserver(() => {
+    if (isCapturing && video) {
+        highlightVideo(video);
+    }
+});
+
+// Start observing video element when it's found
+function startObservingVideo(videoElement) {
+    if (videoElement) {
+        resizeObserver.observe(videoElement);
+    }
+}
+
+// Stop observing when video is lost
+function stopObservingVideo() {
+    resizeObserver.disconnect();
 }
 
 // Calculate crop dimensions based on settings
@@ -125,7 +223,7 @@ function calculateSimilarity(hash1, hash2) {
     return phash.compare(hash1, hash2);
 }
 
-// Find a suitable video element
+// Update the video finding logic to include observation
 function findVideo() {
     debugLog('Searching for video elements...');
     const videos = document.querySelectorAll('video');
@@ -145,6 +243,7 @@ function findVideo() {
 
         if (v.readyState >= 3 && v.videoWidth > 0 && v.videoHeight > 0) {
             debugLog('Found suitable video element');
+            startObservingVideo(v);
             return v;
         }
     }
@@ -152,6 +251,7 @@ function findVideo() {
     // If no suitable video found, try to find any video element
     if (videos.length > 0) {
         debugLog('No suitable video found, using first available video');
+        startObservingVideo(videos[0]);
         return videos[0];
     }
 
