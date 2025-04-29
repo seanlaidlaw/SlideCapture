@@ -85,4 +85,6 @@ const phash = (function () {
         calculate,
         compare
     };
-})(); 
+})();
+
+module.exports = phash; 

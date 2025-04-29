@@ -187,19 +187,19 @@ function calculateCropDimensions(videoWidth, videoHeight) {
 // Create a thumbnail of the video frame
 function createThumbnail(canvas, video) {
     const ctx = canvas.getContext('2d');
-    const scale = 0.1; // Create a small thumbnail (10% of original size)
+    const THUMBNAIL_SIZE = 64; // Fixed size thumbnail
 
     // Calculate crop dimensions
     const crop = calculateCropDimensions(video.videoWidth, video.videoHeight);
 
-    canvas.width = crop.width * scale;
-    canvas.height = crop.height * scale;
+    canvas.width = THUMBNAIL_SIZE;
+    canvas.height = THUMBNAIL_SIZE;
 
     // Draw only the cropped portion
     ctx.drawImage(
         video,
         crop.x, crop.y, crop.width, crop.height, // source rectangle
-        0, 0, canvas.width, canvas.height        // destination rectangle
+        0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE     // destination rectangle
     );
 
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -259,6 +259,46 @@ function findVideo() {
     return null;
 }
 
+function imageDataToCanvas(imageData) {
+    const canvas = document.createElement('canvas');
+    canvas.width = imageData.width;
+    canvas.height = imageData.height;
+    canvas.getContext('2d').putImageData(imageData, 0, 0);
+    return canvas;
+}
+
+function averageHash(imageData, size = 8) {
+    // Downscale to size x size and grayscale
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = size;
+    tmpCanvas.height = size;
+    const tmpCtx = tmpCanvas.getContext('2d');
+    tmpCtx.drawImage(
+        imageDataToCanvas(imageData),
+        0, 0, imageData.width, imageData.height,
+        0, 0, size, size
+    );
+    const smallData = tmpCtx.getImageData(0, 0, size, size).data;
+    let sum = 0;
+    const grays = [];
+    for (let i = 0; i < smallData.length; i += 4) {
+        const gray = (smallData[i] + smallData[i + 1] + smallData[i + 2]) / 3;
+        grays.push(gray);
+        sum += gray;
+    }
+    const mean = sum / grays.length;
+    // Build hash
+    return grays.map(v => v > mean ? 1 : 0);
+}
+
+function ahashSimilarity(hash1, hash2) {
+    let same = 0;
+    for (let i = 0; i < hash1.length; i++) {
+        if (hash1[i] === hash2[i]) same++;
+    }
+    return same / hash1.length;
+}
+
 // Start capturing frames
 function startCapture() {
     debugLog('startCapture called');
@@ -303,6 +343,20 @@ function startCapture() {
             debugLog('Attempting to capture frame');
             // Create thumbnail and calculate hash
             const thumbnail = createThumbnail(canvas, video);
+
+            // Optimization: check if thumbnail is visually identical to previous using aHash
+            if (lastFrameData && lastFrameData.ahash) {
+                const currAhash = averageHash(thumbnail, 8);
+                const similarity = ahashSimilarity(currAhash, lastFrameData.ahash);
+                if (similarity === 1) {
+                    debugLog('Thumbnail visually identical to previous (aHash), skipping');
+                    return;
+                }
+                // Store current aHash for later use
+                lastFrameData.currAhash = currAhash;
+            }
+
+            // Now calculate phash as before
             const currentHash = calculatePHash(thumbnail);
             debugLog('Calculated hash for frame');
 
@@ -332,6 +386,8 @@ function startCapture() {
             const imageData = canvas.toDataURL('image/webp', 0.8);
             lastFrameData = {
                 hash: currentHash,
+                thumbnail: thumbnail,
+                ahash: averageHash(thumbnail, 8), // store aHash for next comparison
                 timestamp: Date.now()
             };
 

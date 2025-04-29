@@ -5,7 +5,7 @@
 A Chrome extension for capturing the shared slides from a streaming feed (such as that from a conference live stream or a zoom call).
 
 It works by detecting the video element on the page and then capturing the current frame from that video, every second. 
-To not save the same slide twice, it uses [perceptual hashing](https://en.wikipedia.org/wiki/Perceptual_hashing) to detect when a frame has changed more than 5%. 
+To not save the same slide twice, it uses [perceptual hashing](https://en.wikipedia.org/wiki/Perceptual_hashing) (using the pHash algorithm) to detect when a frame has changed more than 5%. For efficiency, it first uses [average hashing](https://www.hackerfactor.com/blog/index.php?/archives/432-Looks-Like-It.html) to compare the average luminance of the thumbnails of the frames to only run phash on the frames for which the average hash is not identical (which is 10x quicker than running phash on all frames).
 Once video is playing, press "Start Capture" to start capturing the shared slides. When finished, press "Download All Frames" to download all the captured frames as a ZIP file.
 For best results, set the video quality as high as possible in the video player.
 
