@@ -437,6 +437,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             debugLog('Stopping capture from message');
             stopCapture();
             break;
+        case 'DELETE_CAPTURE':
+            // stop capture if running
+            stopCapture();
+            // Reset in-memory state
+            lastFrameData = null;
+            // If you have other in-memory variables, reset them here
+            debugLog('Capture state deleted and reset.');
+            break;
     }
 });
 

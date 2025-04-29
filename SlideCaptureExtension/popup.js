@@ -14,6 +14,7 @@ const frameContainer = document.getElementById('frameContainer');
 const widthPercentageInput = document.getElementById('widthPercentage');
 const heightPercentageInput = document.getElementById('heightPercentage');
 const cropDirectionButtons = document.querySelectorAll('.crop-direction button');
+const deleteCaptureBtn = document.getElementById('deleteCapture');
 
 // Debug logging function
 function debugLog(message, data = null) {
@@ -51,6 +52,7 @@ function getFrames() {
         capturedFrames = response?.frames || [];
         updateUI();
         displayFrames();
+        updateDeleteButtonState();
     });
 }
 
@@ -227,4 +229,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         isCapturing = message.isCapturing;
         updateUI();
     }
-}); 
+});
+
+deleteCaptureBtn.addEventListener('click', () => {
+    if (deleteCaptureBtn.disabled) return;
+    if (confirm('Are you sure you want to delete all captured frames and reset the capture state?')) {
+        // Clear storage
+        chrome.storage.local.remove(['capturedFrames', 'lastFrameData', 'captureState', 'cropSettings'], () => {
+            // Clear in-memory array
+            capturedFrames = [];
+            // Clear the DOM
+            frameContainer.innerHTML = '';
+            // Update the delete button state
+            updateDeleteButtonState();
+
+            // Reset capture state
+            isCapturing = false;
+            updateUI();
+
+            // Notify background script to reset its state
+            chrome.runtime.sendMessage({ type: 'DELETE_CAPTURE' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Error notifying background script:', chrome.runtime.lastError);
+                }
+            });
+
+            // Notify content script to reset its state
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]) {
+                    chrome.tabs.sendMessage(tabs[0].id, { type: 'DELETE_CAPTURE' }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            console.error('Error notifying content script:', chrome.runtime.lastError);
+                        }
+                    });
+                }
+            });
+
+            // Refresh frames to ensure everything is cleared
+            getFrames();
+        });
+    }
+});
+
+function updateDeleteButtonState() {
+    if (capturedFrames && capturedFrames.length > 0) {
+        deleteCaptureBtn.disabled = false;
+    } else {
+        deleteCaptureBtn.disabled = true;
+    }
+} 

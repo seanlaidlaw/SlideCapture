@@ -12,6 +12,7 @@ const {
 
 const TEST_FOLDER = path.join(__dirname, 'ImagesTests/AllFrames/TransposableElementsInCancer');
 const PHASH_THRESHOLD = 0.95;
+const THUMBNAIL_SIZE = 64;
 
 // Helper to extract slide iteration from filename
 function getSlideIteration(filename) {
@@ -43,6 +44,46 @@ describe('Slide iteration visual identity', function () {
         thumbs = {};
         for (const file of files) {
             thumbs[file] = await createThumbnail(path.join(TEST_FOLDER, file));
+        }
+    });
+
+    it('should create thumbnails of the correct size', function () {
+        for (const thumb of Object.values(thumbs)) {
+            assert.strictEqual(thumb.width, THUMBNAIL_SIZE, 'Thumbnail width should be 64');
+            assert.strictEqual(thumb.height, THUMBNAIL_SIZE, 'Thumbnail height should be 64');
+        }
+    });
+
+    it('aHash and pHash should be deterministic', async function () {
+        for (const [file, thumb] of Object.entries(thumbs)) {
+            const ahash1 = averageHash(thumb, 8);
+            const ahash2 = averageHash(thumb, 8);
+            assert.deepEqual(ahash1, ahash2, `aHash not deterministic for ${file}`);
+            const phash1 = calculatePHash(thumb);
+            const phash2 = calculatePHash(thumb);
+            assert.deepEqual(Array.from(phash1), Array.from(phash2), `pHash not deterministic for ${file}`);
+        }
+    });
+
+    it('aHash and pHash should be robust to small changes', async function () {
+        // For each image, make a copy with a single pixel changed and check similarity is still high
+        for (const [file, thumb] of Object.entries(thumbs)) {
+            // Clone the image data and change one pixel
+            const altered = new Uint8ClampedArray(thumb.data);
+            altered[0] = (altered[0] + 1) % 256; // Change R of first pixel
+            const alteredThumb = {
+                data: altered,
+                width: thumb.width,
+                height: thumb.height
+            };
+            const ahash1 = averageHash(thumb, 8);
+            const ahash2 = averageHash(alteredThumb, 8);
+            const ahashSim = ahashSimilarity(ahash1, ahash2);
+            assert.isAtLeast(ahashSim, 0.95, `aHash not robust to small change for ${file}`);
+            const phash1 = calculatePHash(thumb);
+            const phash2 = calculatePHash(alteredThumb);
+            const phashSim = calculateSimilarity(phash1, phash2);
+            assert.isAtLeast(phashSim, 0.95, `pHash not robust to small change for ${file}`);
         }
     });
 
@@ -85,11 +126,28 @@ describe('Slide iteration visual identity', function () {
                         const phashB = calculatePHash(thumbB);
                         const phashSim = calculateSimilarity(phashA, phashB);
                         // This is a soft check: at least some pairs should be below threshold
-                        // (You can make this stricter if you want)
                         assert.isBelow(phashSim, 1, `pHash should not be 1 for different slide iterations: ${fileA} vs ${fileB}`);
                     }
                 }
             }
         }
+    });
+
+    it('should not have false positives for very different images', function () {
+        // Pick two images from different groups (if available)
+        const groupKeys = Object.keys(groups);
+        if (groupKeys.length < 2) return;
+        const groupA = groups[groupKeys[0]];
+        const groupB = groups[groupKeys[1]];
+        const thumbA = thumbs[groupA[0]];
+        const thumbB = thumbs[groupB[0]];
+        const ahashA = averageHash(thumbA, 8);
+        const ahashB = averageHash(thumbB, 8);
+        const ahashSim = ahashSimilarity(ahashA, ahashB);
+        assert.isBelow(ahashSim, 1, 'aHash should not be 1 for very different images');
+        const phashA = calculatePHash(thumbA);
+        const phashB = calculatePHash(thumbB);
+        const phashSim = calculateSimilarity(phashA, phashB);
+        assert.isBelow(phashSim, 1, 'pHash should not be 1 for very different images');
     });
 });

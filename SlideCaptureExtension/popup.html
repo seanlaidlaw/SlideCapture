@@ -35,6 +35,17 @@
             cursor: not-allowed;
         }
 
+        button.warning {
+            background-color: orange;
+            color: white;
+            border: none;
+        }
+
+        button.warning:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
         .frame-container {
             max-height: 200px;
             overflow-y: auto;
@@ -124,6 +135,7 @@
     <div class="container">
         <button id="startCapture">Start Capture</button>
         <button id="stopCapture" disabled>Stop Capture</button>
+        <button id="deleteCapture" class="warning" disabled>Delete Capture</button>
         <button id="downloadAll" disabled>Download All Frames</button>
 
         <button class="toggle-advanced" id="toggleAdvanced">Show Advanced Options</button>

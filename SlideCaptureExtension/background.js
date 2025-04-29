@@ -41,7 +41,7 @@ function sendToContent(tabId, message) {
                 debugLog('Attempting to inject content script');
                 chrome.scripting.executeScript({
                     target: { tabId: tabId },
-                    files: ['phash.js', 'content.js']
+                    files: ['src/phash.js', 'src/content.js']
                 }).then(() => {
                     debugLog('Content script injected successfully');
                     // Retry sending the message
@@ -124,6 +124,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'DEBUG_LOG':
             debugLog(message.message, message.data);
             break;
+
+        case 'DELETE_CAPTURE':
+            debugLog('Resetting capture state');
+            capturedFrames = [];
+            isCapturing = false;
+            activeTabId = null;
+            sendToPopup({ type: 'CAPTURE_STATE_CHANGED', isCapturing: false });
+            sendResponse({ success: true });
+            break;
     }
 });
 
@@ -134,7 +143,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         if (isCapturing) {
             chrome.scripting.executeScript({
                 target: { tabId: tabId },
-                files: ['phash.js', 'content.js']
+                files: ['src/phash.js', 'src/content.js']
             }).then(() => {
                 debugLog('Content script reinjected after reload');
                 sendToContent(tabId, { type: 'START_CAPTURE' });

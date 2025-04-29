@@ -24,8 +24,9 @@
                 "<all_urls>"
             ],
             "js": [
-                "phash.js",
-                "content.js"
+                "src/phash.js",
+                "src/image_utils.js",
+                "src/content.js"
             ],
             "all_frames": true
         }
