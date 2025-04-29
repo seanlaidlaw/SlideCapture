@@ -2,6 +2,7 @@
 let capturedFrames = [];
 let isCapturing = false;
 let activeTabId = null;
+let captureTabId = null;  // Track the specific tab where capture was started
 
 // Debug logging function
 function debugLog(message, data = null) {
@@ -74,6 +75,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // Use the tabId from the popup message
             if (message.tabId) {
                 activeTabId = message.tabId;
+                captureTabId = message.tabId;  // Store the tab where capture was initiated
                 debugLog('Starting capture on tab', {
                     tabId: activeTabId
                 });
@@ -94,10 +96,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return;
             }
             isCapturing = false;
-            if (activeTabId) {
-                debugLog('Stopping capture on tab', activeTabId);
-                sendToContent(activeTabId, { type: 'STOP_CAPTURE' });
+            if (captureTabId) {  // Use captureTabId instead of activeTabId
+                debugLog('Stopping capture on tab', captureTabId);
+                sendToContent(captureTabId, { type: 'STOP_CAPTURE' });
             }
+            captureTabId = null;  // Clear the capture tab
             sendToPopup({ type: 'CAPTURE_STATE_CHANGED', isCapturing: false });
             sendResponse({ success: true });
             break;
@@ -113,12 +116,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
 
         case 'FRAME_CAPTURED':
-            capturedFrames.push(message.data);
-            debugLog('Frame captured', {
-                totalFrames: capturedFrames.length,
-                timestamp: message.data.timestamp
-            });
-            sendToPopup({ type: 'FRAME_CAPTURED' });
+            // Only process frames from the tab where capture was initiated
+            if (sender.tab.id === captureTabId) {
+                capturedFrames.push(message.data);
+                debugLog('Frame captured', {
+                    totalFrames: capturedFrames.length,
+                    timestamp: message.data.timestamp
+                });
+                sendToPopup({ type: 'FRAME_CAPTURED' });
+            } else {
+                debugLog('Ignoring frame from non-capture tab', {
+                    senderTabId: sender.tab.id,
+                    captureTabId: captureTabId
+                });
+            }
             break;
 
         case 'DEBUG_LOG':
@@ -130,6 +141,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             capturedFrames = [];
             isCapturing = false;
             activeTabId = null;
+            captureTabId = null;  // Clear the capture tab
             sendToPopup({ type: 'CAPTURE_STATE_CHANGED', isCapturing: false });
             sendResponse({ success: true });
             break;
@@ -138,8 +150,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Handle tab updates
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (tabId === activeTabId && changeInfo.status === 'complete') {
-        // Tab was reloaded, reinject content script if capturing
+    // Only reinject content script if this is the tab where capture was initiated
+    if (tabId === captureTabId && changeInfo.status === 'complete') {
         if (isCapturing) {
             chrome.scripting.executeScript({
                 target: { tabId: tabId },
@@ -156,9 +168,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Handle tab removal
 chrome.tabs.onRemoved.addListener((tabId) => {
-    if (tabId === activeTabId) {
+    if (tabId === captureTabId) {  // Check against captureTabId instead of activeTabId
         isCapturing = false;
         activeTabId = null;
+        captureTabId = null;  // Clear the capture tab
         sendToPopup({ type: 'CAPTURE_STATE_CHANGED', isCapturing: false });
     }
 });
