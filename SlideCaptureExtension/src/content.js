@@ -473,4 +473,14 @@ if (video) {
         readyState: video.readyState,
         currentTime: video.currentTime
     });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        averageHash,
+        ahashSimilarity,
+        calculatePHash,
+        calculateSimilarity,
+        createThumbnail
+    };
 } 
