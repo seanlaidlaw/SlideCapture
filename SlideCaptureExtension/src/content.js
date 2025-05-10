@@ -30,11 +30,11 @@ function highlightVideo(videoElement) {
         existingOverlay.remove();
     }
 
-    // If no crop is applied (100% width and height), just highlight the video
+    // If no crop is applied (100% width and height), just highlight the element
     if (cropSettings.widthPercentage === 100 && cropSettings.heightPercentage === 100) {
         videoElement.style.border = '3px solid red';
         videoElement.style.boxSizing = 'border-box';
-        debugLog('Video highlighted (no crop)');
+        debugLog('Element highlighted (no crop)');
         return;
     }
 
@@ -47,19 +47,23 @@ function highlightVideo(videoElement) {
     overlay.style.border = '3px solid red';
     overlay.style.boxSizing = 'border-box';
 
-    // Calculate crop dimensions in video coordinates
-    const crop = calculateCropDimensions(videoElement.videoWidth, videoElement.videoHeight);
+    // Get element dimensions
+    const elementWidth = videoElement instanceof HTMLVideoElement ? videoElement.videoWidth : videoElement.width;
+    const elementHeight = videoElement instanceof HTMLVideoElement ? videoElement.videoHeight : videoElement.height;
 
-    // Get video's display dimensions and position
-    const videoRect = videoElement.getBoundingClientRect();
+    // Calculate crop dimensions in element coordinates
+    const crop = calculateCropDimensions(elementWidth, elementHeight);
+
+    // Get element's display dimensions and position
+    const elementRect = videoElement.getBoundingClientRect();
 
     // Calculate scale factors
-    const scaleX = videoRect.width / videoElement.videoWidth;
-    const scaleY = videoRect.height / videoElement.videoHeight;
+    const scaleX = elementRect.width / elementWidth;
+    const scaleY = elementRect.height / elementHeight;
 
     // Calculate overlay position and size
-    const overlayX = videoRect.left + (crop.x * scaleX);
-    const overlayY = videoRect.top + (crop.y * scaleY);
+    const overlayX = elementRect.left + (crop.x * scaleX);
+    const overlayY = elementRect.top + (crop.y * scaleY);
     const overlayWidth = crop.width * scaleX;
     const overlayHeight = crop.height * scaleY;
 
@@ -73,7 +77,7 @@ function highlightVideo(videoElement) {
     document.body.appendChild(overlay);
     debugLog('Crop area highlighted', {
         crop,
-        videoRect,
+        elementRect,
         scaleX,
         scaleY,
         overlayPosition: {
@@ -223,9 +227,121 @@ function calculateSimilarity(hash1, hash2) {
     return phash.compare(hash1, hash2);
 }
 
-// Update the video finding logic to include observation
+// Helper function to check if a canvas should be excluded
+function isExcludedCanvas(canvas) {
+    if (!canvas.id) return false;
+
+    const excludedSuffixes = ['-anno', '-local', '-share'];
+    return excludedSuffixes.some(suffix =>
+        canvas.id.toLowerCase().endsWith(suffix)
+    );
+}
+
+// Helper function to get canvas dimensions
+function getCanvasDimensions(canvas) {
+    return {
+        id: canvas.id,
+        className: canvas.className,
+        width: canvas.width,
+        height: canvas.height,
+        area: canvas.width * canvas.height
+    };
+}
+
+// Helper function to log canvas details
+function logCanvasDetails(canvas, prefix = '') {
+    debugLog(`${prefix}Canvas:`, {
+        ...getCanvasDimensions(canvas),
+        attributes: Array.from(canvas.attributes)
+            .map(attr => `${attr.name}="${attr.value}"`)
+            .join(', ')
+    });
+}
+
+// Find the largest canvas in a shadow DOM
+function findLargestCanvas(container) {
+    if (!container || !container.shadowRoot) {
+        debugLog('Container not found or does not have shadow root');
+        return null;
+    }
+
+    const canvasElements = container.shadowRoot.querySelectorAll('canvas');
+    debugLog(`Found ${canvasElements.length} canvas elements in shadow DOM`);
+
+    // Log all canvases for debugging
+    canvasElements.forEach((canvas, index) => {
+        logCanvasDetails(canvas, `Canvas ${index}: `);
+    });
+
+    // Filter out excluded canvases and find the largest one
+    const validCanvases = Array.from(canvasElements)
+        .filter(canvas => !isExcludedCanvas(canvas))
+        .map(canvas => ({
+            canvas,
+            dimensions: getCanvasDimensions(canvas)
+        }));
+
+    if (validCanvases.length === 0) {
+        debugLog('No suitable canvas elements found in shadow DOM');
+        return null;
+    }
+
+    // Find the largest canvas by area
+    const largestCanvas = validCanvases.reduce((largest, current) => {
+        if (current.dimensions.area > largest.dimensions.area) {
+            debugLog('New largest canvas found:', current.dimensions);
+            return current;
+        }
+        return largest;
+    }, validCanvases[0]);
+
+    debugLog('Selected largest canvas:', {
+        ...largestCanvas.dimensions,
+        attributes: Array.from(largestCanvas.canvas.attributes)
+            .map(attr => `${attr.name}="${attr.value}"`)
+            .join(', ')
+    });
+
+    return largestCanvas.canvas;
+}
+
+// Create a thumbnail from a canvas element
+function createThumbnailFromCanvas(canvas, sourceCanvas) {
+    const ctx = canvas.getContext('2d');
+    const THUMBNAIL_SIZE = 64; // Fixed size thumbnail
+
+    // Calculate crop dimensions
+    const crop = calculateCropDimensions(sourceCanvas.width, sourceCanvas.height);
+
+    canvas.width = THUMBNAIL_SIZE;
+    canvas.height = THUMBNAIL_SIZE;
+
+    // Draw only the cropped portion
+    ctx.drawImage(
+        sourceCanvas,
+        crop.x, crop.y, crop.width, crop.height, // source rectangle
+        0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE     // destination rectangle
+    );
+
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+// Update the video finding logic to include canvas elements
 function findVideo() {
-    debugLog('Searching for video elements...');
+    debugLog('Searching for video and canvas elements...');
+
+    // First try to find canvas in shadow DOM
+    const videoPlayerContainer = document.querySelector('video-player-container');
+    if (videoPlayerContainer) {
+        const canvas = findLargestCanvas(videoPlayerContainer);
+        if (canvas) {
+            debugLog('Found suitable canvas element in shadow DOM');
+            startObservingVideo(canvas);
+            return canvas;
+        }
+    }
+
+    // If no canvas found, look for video elements
     const videos = document.querySelectorAll('video');
     debugLog(`Found ${videos.length} video elements`);
 
@@ -255,7 +371,7 @@ function findVideo() {
         return videos[0];
     }
 
-    debugLog('No video elements found');
+    debugLog('No video or canvas elements found');
     return null;
 }
 
@@ -328,11 +444,11 @@ function startCapture() {
 
     captureInterval = setInterval(() => {
         debugLog('Capture interval triggered');
-        if (!video || video.readyState < 3) {
-            debugLog('Video element lost or not ready, finding new one');
+        if (!video) {
+            debugLog('No video/canvas element found, finding new one');
             video = findVideo();
             if (!video) {
-                debugLog('No video element found, stopping capture');
+                debugLog('No video/canvas element found, stopping capture');
                 stopCapture();
                 return;
             }
@@ -342,7 +458,9 @@ function startCapture() {
         try {
             debugLog('Attempting to capture frame');
             // Create thumbnail and calculate hash
-            const thumbnail = createThumbnail(canvas, video);
+            const thumbnail = video instanceof HTMLVideoElement
+                ? createThumbnail(canvas, video)
+                : createThumbnailFromCanvas(canvas, video);
 
             // Optimization: check if thumbnail is visually identical to previous using aHash
             if (lastFrameData && lastFrameData.ahash) {
@@ -370,8 +488,12 @@ function startCapture() {
                 }
             }
 
+            // Get element dimensions
+            const elementWidth = video instanceof HTMLVideoElement ? video.videoWidth : video.width;
+            const elementHeight = video instanceof HTMLVideoElement ? video.videoHeight : video.height;
+
             // Capture the full resolution frame with crop
-            const crop = calculateCropDimensions(video.videoWidth, video.videoHeight);
+            const crop = calculateCropDimensions(elementWidth, elementHeight);
             debugLog('Calculated crop dimensions:', crop);
             canvas.width = crop.width;
             canvas.height = crop.height;
@@ -456,11 +578,23 @@ const observer = new MutationObserver((mutations) => {
 
     for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
+            // Check for video elements
             if (node.tagName === 'VIDEO') {
                 debugLog('New video element detected', node);
                 if (isCapturing) {
                     video = node;
                     highlightVideo(video);
+                }
+            }
+            // Check for video-player-container
+            if (node.tagName === 'VIDEO-PLAYER-CONTAINER') {
+                debugLog('New video-player-container detected', node);
+                if (isCapturing) {
+                    const canvas = findLargestCanvas(node);
+                    if (canvas) {
+                        video = canvas;
+                        highlightVideo(video);
+                    }
                 }
             }
         }
