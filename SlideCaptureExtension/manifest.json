@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "SlideCapture",
     "version": "0.0.0.1",
-    "description": "Capture slides from video streams with automatic duplicate detection",
+    "description": "Capture slides from video streams and browser Zoom calls with automatic duplicate detection",
     "icons": {
         "128": "img/icon.png"
     },

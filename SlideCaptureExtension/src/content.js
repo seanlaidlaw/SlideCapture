@@ -20,7 +20,7 @@ function debugLog(message, data = null) {
     chrome.runtime.sendMessage({ type: 'DEBUG_LOG', message, data }).catch(() => { });
 }
 
-// Add red border to video element
+// Add red border to video/canvas element
 function highlightVideo(videoElement) {
     if (!videoElement) return;
 
@@ -30,15 +30,7 @@ function highlightVideo(videoElement) {
         existingOverlay.remove();
     }
 
-    // If no crop is applied (100% width and height), just highlight the element
-    if (cropSettings.widthPercentage === 100 && cropSettings.heightPercentage === 100) {
-        videoElement.style.border = '3px solid red';
-        videoElement.style.boxSizing = 'border-box';
-        debugLog('Element highlighted (no crop)');
-        return;
-    }
-
-    // Create overlay for crop area
+    // Create overlay for highlighting
     const overlay = document.createElement('div');
     overlay.id = 'slidecapture-crop-overlay';
     overlay.style.position = 'absolute';
@@ -47,15 +39,24 @@ function highlightVideo(videoElement) {
     overlay.style.border = '3px solid red';
     overlay.style.boxSizing = 'border-box';
 
-    // Get element dimensions
+    // Get element dimensions and position
+    const elementRect = videoElement.getBoundingClientRect();
     const elementWidth = videoElement instanceof HTMLVideoElement ? videoElement.videoWidth : videoElement.width;
     const elementHeight = videoElement instanceof HTMLVideoElement ? videoElement.videoHeight : videoElement.height;
 
+    // If no crop is applied (100% width and height), just highlight the element
+    if (cropSettings.widthPercentage === 100 && cropSettings.heightPercentage === 100) {
+        overlay.style.left = `${elementRect.left}px`;
+        overlay.style.top = `${elementRect.top}px`;
+        overlay.style.width = `${elementRect.width}px`;
+        overlay.style.height = `${elementRect.height}px`;
+        document.body.appendChild(overlay);
+        debugLog('Element highlighted (no crop)');
+        return;
+    }
+
     // Calculate crop dimensions in element coordinates
     const crop = calculateCropDimensions(elementWidth, elementHeight);
-
-    // Get element's display dimensions and position
-    const elementRect = videoElement.getBoundingClientRect();
 
     // Calculate scale factors
     const scaleX = elementRect.width / elementWidth;
@@ -89,11 +90,9 @@ function highlightVideo(videoElement) {
     });
 }
 
-// Remove border from video element
+// Remove border from video/canvas element
 function unhighlightVideo(videoElement) {
     if (!videoElement) return;
-    videoElement.style.border = '';
-    videoElement.style.boxSizing = '';
 
     // Remove crop overlay if it exists
     const overlay = document.getElementById('slidecapture-crop-overlay');
@@ -101,7 +100,7 @@ function unhighlightVideo(videoElement) {
         overlay.remove();
     }
 
-    debugLog('Video unhighlighted');
+    debugLog('Element unhighlighted');
 }
 
 // Update highlight when crop settings change
