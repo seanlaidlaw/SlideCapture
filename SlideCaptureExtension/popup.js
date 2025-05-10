@@ -18,7 +18,7 @@ const deleteCaptureBtn = document.getElementById('deleteCapture');
 
 // Debug logging function
 function debugLog(message, data = null) {
-    const logMessage = `[AACR Popup] ${message}`;
+    const logMessage = `[SlideCapture Popup] ${message}`;
     console.log(logMessage, data || '');
 }
 

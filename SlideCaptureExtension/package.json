@@ -1,7 +1,7 @@
 {
-    "name": "aacr-extension-tests",
+    "name": "slidecapture-extension-tests",
     "version": "1.0.0",
-    "description": "Tests for AACR Extension image similarity detection",
+    "description": "Tests for SlideCapture Extension",
     "main": "test_similarity.js",
     "scripts": {
         "test": "node test_similarity.js"

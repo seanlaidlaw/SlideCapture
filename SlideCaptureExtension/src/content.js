@@ -15,7 +15,7 @@ const MIN_SIMILARITY_THRESHOLD = 0.95; // Minimum similarity to consider frames 
 
 // Debug logging function
 function debugLog(message, data = null) {
-    const logMessage = `[AACR Extension] ${message}`;
+    const logMessage = `[SlideCapture Extension] ${message}`;
     console.log(logMessage, data || '');
     chrome.runtime.sendMessage({ type: 'DEBUG_LOG', message, data }).catch(() => { });
 }
@@ -25,7 +25,7 @@ function highlightVideo(videoElement) {
     if (!videoElement) return;
 
     // Remove any existing overlay
-    const existingOverlay = document.getElementById('aacr-crop-overlay');
+    const existingOverlay = document.getElementById('slidecapture-crop-overlay');
     if (existingOverlay) {
         existingOverlay.remove();
     }
@@ -40,7 +40,7 @@ function highlightVideo(videoElement) {
 
     // Create overlay for crop area
     const overlay = document.createElement('div');
-    overlay.id = 'aacr-crop-overlay';
+    overlay.id = 'slidecapture-crop-overlay';
     overlay.style.position = 'absolute';
     overlay.style.pointerEvents = 'none';
     overlay.style.zIndex = '9999';
@@ -92,7 +92,7 @@ function unhighlightVideo(videoElement) {
     videoElement.style.boxSizing = '';
 
     // Remove crop overlay if it exists
-    const overlay = document.getElementById('aacr-crop-overlay');
+    const overlay = document.getElementById('slidecapture-crop-overlay');
     if (overlay) {
         overlay.remove();
     }

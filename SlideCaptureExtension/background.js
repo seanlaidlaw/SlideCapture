@@ -6,7 +6,7 @@ let captureTabId = null;  // Track the specific tab where capture was started
 
 // Debug logging function
 function debugLog(message, data = null) {
-    const logMessage = `[AACR Extension] ${message}`;
+    const logMessage = `[SlideCapture Extension] ${message}`;
     console.log(logMessage, data || '');
 }
 
