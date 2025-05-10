@@ -9,9 +9,24 @@ To not save the same slide twice, it uses [perceptual hashing](https://en.wikipe
 Once video is playing, press "Start Capture" to start capturing the shared slides. When finished, press "Download All Frames" to download all the captured frames as a ZIP file.
 For best results, set the video quality as high as possible in the video player.
 
-Illustrative example from the live stream of a conference:
+Illustrative example of extension in action before and after hitting "Stop Capture":
 
-![Screenshot of SlideCapture](img/screenshot.png)
+![Screenshot of SlideCapture before starting the capture](img/Screenshot_1.png)
+
+![Screenshot of SlideCapture during capture where the captured slides are visible in the extension popup](img/Screenshot_2.png)
+
+
+## Required Permissions 🔒
+
+This extension requires the following permissions to function properly:
+
+- **Active Tab**: Required to access and capture content from the current tab where the video is playing
+- **Storage**: Used to save capture settings (crop direction, width/height percentages) and temporarily store captured frames
+- **Scripting**: Needed to inject content scripts that detect and interact with video/canvas elements on the page
+- **Tabs**: Required to check if the current tab is valid for capture and to handle tab updates
+- **Host Permission**: Required to access video content from various streaming platforms and video players
+
+These permissions are requested with the minimum scope necessary for the extension to function. The extension only accesses the active tab when capturing is enabled and does not collect any personal data.
 
 ## Advanced Features
 
