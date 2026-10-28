@@ -41,7 +41,7 @@ function sendToContent(tabId, message) {
             if (error.message.includes('Receiving end does not exist')) {
                 debugLog('Attempting to inject content script');
                 chrome.scripting.executeScript({
-                    target: { tabId: tabId },
+                    target: { tabId: tabId, allFrames: true },
                     files: ['src/phash.js', 'src/content.js']
                 }).then(() => {
                     debugLog('Content script injected successfully');
@@ -132,6 +132,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
             break;
 
+        case 'CAPTURE_VISIBLE_TAB':
+            if (!sender.tab || sender.tab.id !== captureTabId) {
+                sendResponse({ error: 'Not the capture tab' });
+                return;
+            }
+            chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' })
+                .then(dataUrl => sendResponse({ dataUrl }))
+                .catch(error => {
+                    debugLog('captureVisibleTab failed', error.message);
+                    sendResponse({ error: error.message });
+                });
+            return true; // keep channel open for async response
+
         case 'DEBUG_LOG':
             debugLog(message.message, message.data);
             break;
@@ -154,7 +167,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tabId === captureTabId && changeInfo.status === 'complete') {
         if (isCapturing) {
             chrome.scripting.executeScript({
-                target: { tabId: tabId },
+                target: { tabId: tabId, allFrames: true },
                 files: ['src/phash.js', 'src/content.js']
             }).then(() => {
                 debugLog('Content script reinjected after reload');

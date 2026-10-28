@@ -3,13 +3,11 @@ let video = null;
 let isCapturing = false;
 let captureInterval = null;
 let lastFrameData = null;
-let lastVideoCheck = 0;
 let cropSettings = {
     direction: 'bottom-right',
     widthPercentage: 100,
     heightPercentage: 100
 };
-const VIDEO_CHECK_INTERVAL = 1000; // Check for video every second
 const CAPTURE_INTERVAL = 1000; // Capture every second
 const MIN_SIMILARITY_THRESHOLD = 0.95; // Minimum similarity to consider frames different
 
@@ -20,80 +18,52 @@ function debugLog(message, data = null) {
     chrome.runtime.sendMessage({ type: 'DEBUG_LOG', message, data }).catch(() => { });
 }
 
-// Add red border to video/canvas element
+function getSourceSize(el) {
+    if (el instanceof HTMLVideoElement) return { width: el.videoWidth, height: el.videoHeight };
+    return { width: el.width, height: el.height };
+}
+
+// Border sits outside so screenshots miss it
 function highlightVideo(videoElement) {
     if (!videoElement) return;
 
-    // Remove any existing overlay
     const existingOverlay = document.getElementById('slidecapture-crop-overlay');
-    if (existingOverlay) {
-        existingOverlay.remove();
-    }
+    if (existingOverlay) existingOverlay.remove();
 
-    // Create overlay for highlighting
+    const BORDER = 3;
     const overlay = document.createElement('div');
     overlay.id = 'slidecapture-crop-overlay';
-    overlay.style.position = 'absolute';
+    overlay.style.position = 'fixed'; // getBoundingClientRect is viewport-relative
     overlay.style.pointerEvents = 'none';
-    overlay.style.zIndex = '9999';
-    overlay.style.border = '3px solid red';
+    overlay.style.zIndex = '2147483647';
+    overlay.style.border = `${BORDER}px solid red`;
     overlay.style.boxSizing = 'border-box';
 
-    // Get element dimensions and position
-    const elementRect = videoElement.getBoundingClientRect();
-    const elementWidth = videoElement instanceof HTMLVideoElement ? videoElement.videoWidth : videoElement.width;
-    const elementHeight = videoElement instanceof HTMLVideoElement ? videoElement.videoHeight : videoElement.height;
+    const r = getRectRelativeTo(videoElement, window);
+    const rect = { left: r.x, top: r.y, width: r.width, height: r.height };
+    const src = getSourceSize(videoElement);
+    let x = rect.left, y = rect.top, w = rect.width, h = rect.height;
 
-    // If no crop is applied (100% width and height), just highlight the element
-    if (cropSettings.widthPercentage === 100 && cropSettings.heightPercentage === 100) {
-        overlay.style.left = `${elementRect.left}px`;
-        overlay.style.top = `${elementRect.top}px`;
-        overlay.style.width = `${elementRect.width}px`;
-        overlay.style.height = `${elementRect.height}px`;
-        document.body.appendChild(overlay);
-        debugLog('Element highlighted (no crop)');
-        return;
+    if (!(cropSettings.widthPercentage === 100 && cropSettings.heightPercentage === 100) && src.width && src.height) {
+        const crop = calculateCropDimensions(src.width, src.height);
+        const scaleX = rect.width / src.width;
+        const scaleY = rect.height / src.height;
+        x = rect.left + crop.x * scaleX;
+        y = rect.top + crop.y * scaleY;
+        w = crop.width * scaleX;
+        h = crop.height * scaleY;
     }
 
-    // Calculate crop dimensions in element coordinates
-    const crop = calculateCropDimensions(elementWidth, elementHeight);
-
-    // Calculate scale factors
-    const scaleX = elementRect.width / elementWidth;
-    const scaleY = elementRect.height / elementHeight;
-
-    // Calculate overlay position and size
-    const overlayX = elementRect.left + (crop.x * scaleX);
-    const overlayY = elementRect.top + (crop.y * scaleY);
-    const overlayWidth = crop.width * scaleX;
-    const overlayHeight = crop.height * scaleY;
-
-    // Position the overlay
-    overlay.style.left = `${overlayX}px`;
-    overlay.style.top = `${overlayY}px`;
-    overlay.style.width = `${overlayWidth}px`;
-    overlay.style.height = `${overlayHeight}px`;
-
-    // Add overlay to document
+    overlay.style.left = `${x - BORDER}px`;
+    overlay.style.top = `${y - BORDER}px`;
+    overlay.style.width = `${w + 2 * BORDER}px`;
+    overlay.style.height = `${h + 2 * BORDER}px`;
     document.body.appendChild(overlay);
-    debugLog('Crop area highlighted', {
-        crop,
-        elementRect,
-        scaleX,
-        scaleY,
-        overlayPosition: {
-            x: overlayX,
-            y: overlayY,
-            width: overlayWidth,
-            height: overlayHeight
-        }
-    });
+    debugLog('Capture area highlighted', { x, y, w, h });
 }
 
 // Remove border from video/canvas element
-function unhighlightVideo(videoElement) {
-    if (!videoElement) return;
-
+function unhighlightVideo() {
     // Remove crop overlay if it exists
     const overlay = document.getElementById('slidecapture-crop-overlay');
     if (overlay) {
@@ -187,27 +157,6 @@ function calculateCropDimensions(videoWidth, videoHeight) {
     return { x, y, width, height };
 }
 
-// Create a thumbnail of the video frame
-function createThumbnail(canvas, video) {
-    const ctx = canvas.getContext('2d');
-    const THUMBNAIL_SIZE = 64; // Fixed size thumbnail
-
-    // Calculate crop dimensions
-    const crop = calculateCropDimensions(video.videoWidth, video.videoHeight);
-
-    canvas.width = THUMBNAIL_SIZE;
-    canvas.height = THUMBNAIL_SIZE;
-
-    // Draw only the cropped portion
-    ctx.drawImage(
-        video,
-        crop.x, crop.y, crop.width, crop.height, // source rectangle
-        0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE     // destination rectangle
-    );
-
-    return ctx.getImageData(0, 0, canvas.width, canvas.height);
-}
-
 // Calculate perceptual hash using phash library
 function calculatePHash(imageData) {
     // Convert ImageData to Uint8Array for phash
@@ -259,12 +208,17 @@ function logCanvasDetails(canvas, prefix = '') {
 
 // Find the largest canvas in a shadow DOM
 function findLargestCanvas(container) {
-    if (!container || !container.shadowRoot) {
+    const shadow = container ? getShadowRoot(container) : null;
+    if (!container) return null;
+    if (!shadow && !container.querySelector('canvas')) {
         debugLog('Container not found or does not have shadow root');
         return null;
     }
 
-    const canvasElements = container.shadowRoot.querySelectorAll('canvas');
+    const canvasElements = [
+        ...(shadow ? shadow.querySelectorAll('canvas') : []),
+        ...container.querySelectorAll('canvas')
+    ];
     debugLog(`Found ${canvasElements.length} canvas elements in shadow DOM`);
 
     // Log all canvases for debugging
@@ -304,66 +258,114 @@ function findLargestCanvas(container) {
     return largestCanvas.canvas;
 }
 
-// Create a thumbnail from a canvas element
-function createThumbnailFromCanvas(canvas, sourceCanvas) {
-    const ctx = canvas.getContext('2d');
-    const THUMBNAIL_SIZE = 64; // Fixed size thumbnail
+// Parent frames skip documents marked here
+try { document.documentElement.dataset.slidecaptureInjected = '1'; } catch (e) { }
 
-    // Calculate crop dimensions
-    const crop = calculateCropDimensions(sourceCanvas.width, sourceCanvas.height);
-
-    canvas.width = THUMBNAIL_SIZE;
-    canvas.height = THUMBNAIL_SIZE;
-
-    // Draw only the cropped portion
-    ctx.drawImage(
-        sourceCanvas,
-        crop.x, crop.y, crop.width, crop.height, // source rectangle
-        0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE     // destination rectangle
-    );
-
-    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+// Includes closed roots (extension-only API)
+function getShadowRoot(el) {
+    try {
+        if (chrome.dom && chrome.dom.openOrClosedShadowRoot) {
+            return chrome.dom.openOrClosedShadowRoot(el) || null;
+        }
+    } catch (e) { }
+    return el.shadowRoot || null;
 }
 
-// Update the video finding logic to include canvas elements
+// Also searches shadow roots and uninjected iframes
+function querySelectorAllDeep(selector, root = document, seen = new Set()) {
+    if (!root || seen.has(root)) return [];
+    seen.add(root);
+    const results = [...root.querySelectorAll(selector)];
+    for (const el of root.querySelectorAll('*')) {
+        const sr = getShadowRoot(el);
+        if (sr) results.push(...querySelectorAllDeep(selector, sr, seen));
+        if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+            let doc = null;
+            try { doc = el.contentDocument; } catch (e) { }
+            if (doc && doc.documentElement && !doc.documentElement.dataset.slidecaptureInjected) {
+                results.push(...querySelectorAllDeep(selector, doc, seen));
+            }
+        }
+    }
+    return results;
+}
+
+function logPageDiagnostics() {
+    let shadowHosts = 0, closedHosts = 0;
+    const custom = new Set();
+    for (const el of document.querySelectorAll('*')) {
+        if (el.tagName.includes('-')) custom.add(el.tagName.toLowerCase());
+        const sr = getShadowRoot(el);
+        if (sr) { shadowHosts++; if (!el.shadowRoot) closedHosts++; }
+    }
+    debugLog('Page diagnostics', {
+        frameUrl: location.href,
+        isTopFrame: window === window.top,
+        iframes: [...document.querySelectorAll('iframe')].map(f => f.src || '(no src)'),
+        shadowHosts, closedShadowHosts: closedHosts,
+        customElements: [...custom].slice(0, 30),
+        deepCanvases: querySelectorAllDeep('canvas').map(c => `${c.id || '(no id)'} ${c.width}x${c.height}`).slice(0, 20)
+    });
+}
+
+function isShareContainer(container) {
+    if (container.querySelector('video-player[media-type="share"]')) return true;
+    const cls = (container.className || '') + ' ' + (container.parentElement?.className || '');
+    return /share/i.test(cls);
+}
+
+function findZoomCanvas() {
+    const containers = querySelectorAllDeep('video-player-container');
+    if (containers.length === 0) {
+        const canvases = querySelectorAllDeep('canvas[id^="video-player-canvas"]')
+            .filter(c => !isExcludedCanvas(c) && c.width > 0 && c.height > 0);
+        if (canvases.length === 0) return null;
+        debugLog(`No containers, but found ${canvases.length} Zoom video canvases`);
+        const hostOf = c => c.getRootNode()?.host || c.parentElement;
+        const shareCanvases = canvases.filter(c => {
+            const h = hostOf(c);
+            return h && (/share/i.test(h.className || '') || (h.closest && h.closest('[class*="share"]')) ||
+                (h.querySelector && h.querySelector('[media-type="share"]')));
+        });
+        const pool = shareCanvases.length ? shareCanvases : canvases;
+        return pool.sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    }
+    debugLog(`Found ${containers.length} video-player-container elements`);
+
+    const share = containers.filter(isShareContainer);
+    const candidates = share.length > 0 ? share : containers;
+    if (share.length > 0) debugLog(`${share.length} of them are screen-share containers`);
+
+    let best = null;
+    for (const container of candidates) {
+        const canvas = findLargestCanvas(container);
+        if (!canvas) continue;
+        const area = canvas.width * canvas.height;
+        if (!best || area > best.area) best = { canvas, area };
+    }
+    return best ? best.canvas : null;
+}
+
 function findVideo() {
     debugLog('Searching for video and canvas elements...');
 
-    // First try to find canvas in shadow DOM
-    const videoPlayerContainer = document.querySelector('video-player-container');
-    if (videoPlayerContainer) {
-        const canvas = findLargestCanvas(videoPlayerContainer);
-        if (canvas) {
-            debugLog('Found suitable canvas element in shadow DOM');
-            startObservingVideo(canvas);
-            return canvas;
-        }
+    const canvas = findZoomCanvas();
+    if (canvas) {
+        debugLog('Found Zoom canvas element', { id: canvas.id, width: canvas.width, height: canvas.height });
+        startObservingVideo(canvas);
+        return canvas;
     }
 
-    // If no canvas found, look for video elements
-    const videos = document.querySelectorAll('video');
+    const videos = querySelectorAllDeep('video');
     debugLog(`Found ${videos.length} video elements`);
 
-    for (const v of videos) {
-        debugLog('Checking video element:', {
-            readyState: v.readyState,
-            videoWidth: v.videoWidth,
-            videoHeight: v.videoHeight,
-            src: v.src,
-            currentSrc: v.currentSrc,
-            tagName: v.tagName,
-            id: v.id,
-            className: v.className
-        });
-
-        if (v.readyState >= 3 && v.videoWidth > 0 && v.videoHeight > 0) {
-            debugLog('Found suitable video element');
-            startObservingVideo(v);
-            return v;
-        }
+    const ready = videos.find(v => v.readyState >= 3 && v.videoWidth > 0 && v.videoHeight > 0);
+    if (ready) {
+        debugLog('Found suitable video element', { w: ready.videoWidth, h: ready.videoHeight });
+        startObservingVideo(ready);
+        return ready;
     }
 
-    // If no suitable video found, try to find any video element
     if (videos.length > 0) {
         debugLog('No suitable video found, using first available video');
         startObservingVideo(videos[0]);
@@ -371,7 +373,133 @@ function findVideo() {
     }
 
     debugLog('No video or canvas elements found');
+    logPageDiagnostics();
     return null;
+}
+
+// WebGL canvases may read back blank
+let useScreenshotMode = false;
+let blankFrameCount = 0;
+const BLANK_FRAMES_BEFORE_FALLBACK = 3;
+
+function isBlankImage(imageData) {
+    const d = imageData.data;
+    let min = 255, max = 0, alphaMax = 0;
+    for (let i = 0; i < d.length; i += 4) {
+        const g = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        if (g < min) min = g;
+        if (g > max) max = g;
+        if (d[i + 3] > alphaMax) alphaMax = d[i + 3];
+    }
+    return alphaMax === 0 || (max - min) < 2;
+}
+
+function getRectRelativeTo(el, targetWin) {
+    const r = el.getBoundingClientRect();
+    let x = r.left, y = r.top;
+    let win = el.ownerDocument.defaultView;
+    try {
+        while (win && win !== targetWin && win.frameElement) {
+            const fe = win.frameElement;
+            const fr = fe.getBoundingClientRect();
+            x += fr.left + fe.clientLeft;
+            y += fr.top + fe.clientTop;
+            win = win.parent;
+        }
+    } catch (e) {
+        debugLog('Cross-origin iframe: capture area may be offset', e.message);
+    }
+    return { x, y, width: r.width, height: r.height };
+}
+
+function getRectInTopWindow(el) {
+    let top = window;
+    try { top = window.top; void top.innerWidth; } catch (e) { top = window; }
+    return getRectRelativeTo(el, top);
+}
+
+function loadImage(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+    });
+}
+
+async function grabViaScreenshot(el) {
+    const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_VISIBLE_TAB' });
+    if (!response || !response.dataUrl) {
+        throw new Error('Tab screenshot failed: ' + (response && response.error));
+    }
+    const img = await loadImage(response.dataUrl);
+    const rect = getRectInTopWindow(el);
+    const topWidth = (() => { try { return window.top.innerWidth; } catch (e) { return window.innerWidth; } })();
+    const scale = img.naturalWidth / topWidth;
+
+    const sx = Math.max(0, Math.round(rect.x * scale));
+    const sy = Math.max(0, Math.round(rect.y * scale));
+    const sw = Math.min(img.naturalWidth - sx, Math.round(rect.width * scale));
+    const sh = Math.min(img.naturalHeight - sy, Math.round(rect.height * scale));
+    if (sw <= 0 || sh <= 0) throw new Error('Element is not visible on screen');
+
+    const c = document.createElement('canvas');
+    c.width = sw;
+    c.height = sh;
+    c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    return c;
+}
+
+async function getFrameSource(el) {
+    if (!useScreenshotMode) {
+        try {
+            const { width, height } = getSourceSize(el);
+            if (!width || !height) return null;
+
+            // Videos read back fine; skip blank check
+            if (el instanceof HTMLVideoElement) {
+                return { source: el, width, height };
+            }
+
+            const probe = document.createElement('canvas');
+            probe.width = probe.height = 32;
+            const pctx = probe.getContext('2d');
+            pctx.drawImage(el, 0, 0, width, height, 0, 0, 32, 32);
+            if (!isBlankImage(pctx.getImageData(0, 0, 32, 32))) {
+                blankFrameCount = 0;
+                return { source: el, width, height };
+            }
+            blankFrameCount++;
+            debugLog(`Direct read gave a blank frame (${blankFrameCount}/${BLANK_FRAMES_BEFORE_FALLBACK})`);
+            if (blankFrameCount < BLANK_FRAMES_BEFORE_FALLBACK) return null;
+        } catch (e) {
+            // Tainted video or unreadable canvas
+            debugLog('Direct read failed: ' + e.message);
+        }
+        debugLog('Switching to tab-screenshot capture mode');
+        useScreenshotMode = true;
+    }
+    const shot = await grabViaScreenshot(el);
+    return { source: shot, width: shot.width, height: shot.height };
+}
+
+function thumbnailFromSource(src) {
+    const SIZE = 64;
+    const crop = calculateCropDimensions(src.width, src.height);
+    const t = document.createElement('canvas');
+    t.width = t.height = SIZE;
+    const ctx = t.getContext('2d');
+    ctx.drawImage(src.source, crop.x, crop.y, crop.width, crop.height, 0, 0, SIZE, SIZE);
+    return ctx.getImageData(0, 0, SIZE, SIZE);
+}
+
+function fullFrameFromSource(src) {
+    const crop = calculateCropDimensions(src.width, src.height);
+    const c = document.createElement('canvas');
+    c.width = crop.width;
+    c.height = crop.height;
+    c.getContext('2d').drawImage(src.source, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+    return c;
 }
 
 function imageDataToCanvas(imageData) {
@@ -414,6 +542,88 @@ function ahashSimilarity(hash1, hash2) {
     return same / hash1.length;
 }
 
+function needsNewTarget() {
+    if (!video || !video.isConnected) return true;
+    // Switch to a share that appeared later
+    if (!(video instanceof HTMLVideoElement)) {
+        const container = video.getRootNode()?.host;
+        if (container && !isShareContainer(container) &&
+            querySelectorAllDeep('video-player-container').some(isShareContainer)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+let captureBusy = false;
+
+async function captureTick() {
+    if (captureBusy) return;
+    captureBusy = true;
+    try {
+        if (needsNewTarget()) {
+            debugLog('Looking for capture target');
+            const found = findVideo();
+            if (found !== video) {
+                video = found;
+                blankFrameCount = 0;
+                useScreenshotMode = false;
+                lastFrameData = null;
+            }
+            if (!video) {
+                debugLog('No video/canvas element found yet, will keep looking');
+                unhighlightVideo();
+                return;
+            }
+            highlightVideo(video);
+        }
+
+        const src = await getFrameSource(video);
+        if (!src) return;
+        const thumbnail = thumbnailFromSource(src);
+
+        if (!(src.source instanceof HTMLVideoElement) && isBlankImage(thumbnail)) {
+            debugLog('Frame is blank, skipping');
+            return;
+        }
+
+        const currAhash = averageHash(thumbnail, 8);
+        if (lastFrameData && ahashSimilarity(currAhash, lastFrameData.ahash) === 1) {
+            debugLog('Thumbnail visually identical to previous (aHash), skipping');
+            return;
+        }
+
+        const currentHash = calculatePHash(thumbnail);
+        if (lastFrameData) {
+            const similarity = calculateSimilarity(currentHash, lastFrameData.hash);
+            debugLog('Frame similarity:', similarity);
+            if (similarity > MIN_SIMILARITY_THRESHOLD) {
+                debugLog('Frame too similar, skipping');
+                return;
+            }
+        }
+
+        const frame = fullFrameFromSource(src);
+        const imageData = frame.toDataURL('image/webp', 0.8);
+        lastFrameData = { hash: currentHash, ahash: currAhash, timestamp: Date.now() };
+
+        debugLog('Sending frame to background', { width: frame.width, height: frame.height, screenshotMode: useScreenshotMode });
+        chrome.runtime.sendMessage({
+            type: 'FRAME_CAPTURED',
+            data: {
+                imageData,
+                timestamp: lastFrameData.timestamp,
+                width: frame.width,
+                height: frame.height
+            }
+        }).catch(error => debugLog('Error sending frame:', error));
+    } catch (error) {
+        debugLog('Error capturing frame: ' + (error && error.message), error);
+    } finally {
+        captureBusy = false;
+    }
+}
+
 // Start capturing frames
 function startCapture() {
     debugLog('startCapture called');
@@ -422,114 +632,26 @@ function startCapture() {
         return;
     }
 
+    // Runs in every frame; one captures
     video = findVideo();
     if (!video) {
-        debugLog('No suitable video element found');
+        debugLog('No suitable video element found in this frame');
         return;
     }
 
-    // Get current crop settings
     chrome.storage.local.get(['cropSettings'], (result) => {
-        debugLog('Retrieved crop settings:', result.cropSettings);
         if (result.cropSettings) {
             cropSettings = result.cropSettings;
+            if (isCapturing) highlightVideo(video);
         }
     });
 
     isCapturing = true;
-    highlightVideo(video);
-    const canvas = document.createElement('canvas');
+    useScreenshotMode = false;
+    blankFrameCount = 0;
     lastFrameData = null;
-
-    captureInterval = setInterval(() => {
-        debugLog('Capture interval triggered');
-        if (!video) {
-            debugLog('No video/canvas element found, finding new one');
-            video = findVideo();
-            if (!video) {
-                debugLog('No video/canvas element found, stopping capture');
-                stopCapture();
-                return;
-            }
-            highlightVideo(video);
-        }
-
-        try {
-            debugLog('Attempting to capture frame');
-            // Create thumbnail and calculate hash
-            const thumbnail = video instanceof HTMLVideoElement
-                ? createThumbnail(canvas, video)
-                : createThumbnailFromCanvas(canvas, video);
-
-            // Optimization: check if thumbnail is visually identical to previous using aHash
-            if (lastFrameData && lastFrameData.ahash) {
-                const currAhash = averageHash(thumbnail, 8);
-                const similarity = ahashSimilarity(currAhash, lastFrameData.ahash);
-                if (similarity === 1) {
-                    debugLog('Thumbnail visually identical to previous (aHash), skipping');
-                    return;
-                }
-                // Store current aHash for later use
-                lastFrameData.currAhash = currAhash;
-            }
-
-            // Now calculate phash as before
-            const currentHash = calculatePHash(thumbnail);
-            debugLog('Calculated hash for frame');
-
-            // Check if this frame is different from the last one
-            if (lastFrameData) {
-                const similarity = calculateSimilarity(currentHash, lastFrameData.hash);
-                debugLog('Frame similarity:', similarity);
-                if (similarity > MIN_SIMILARITY_THRESHOLD) {
-                    debugLog('Frame too similar, skipping');
-                    return; // Skip similar frames
-                }
-            }
-
-            // Get element dimensions
-            const elementWidth = video instanceof HTMLVideoElement ? video.videoWidth : video.width;
-            const elementHeight = video instanceof HTMLVideoElement ? video.videoHeight : video.height;
-
-            // Capture the full resolution frame with crop
-            const crop = calculateCropDimensions(elementWidth, elementHeight);
-            debugLog('Calculated crop dimensions:', crop);
-            canvas.width = crop.width;
-            canvas.height = crop.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(
-                video,
-                crop.x, crop.y, crop.width, crop.height,
-                0, 0, canvas.width, canvas.height
-            );
-
-            // Store frame data and send to background
-            const imageData = canvas.toDataURL('image/webp', 0.8);
-            lastFrameData = {
-                hash: currentHash,
-                thumbnail: thumbnail,
-                ahash: averageHash(thumbnail, 8), // store aHash for next comparison
-                timestamp: Date.now()
-            };
-
-            debugLog('Sending frame to background');
-            chrome.runtime.sendMessage({
-                type: 'FRAME_CAPTURED',
-                data: {
-                    imageData,
-                    timestamp: lastFrameData.timestamp,
-                    width: canvas.width,
-                    height: canvas.height
-                }
-            }).catch(error => {
-                debugLog('Error sending frame:', error);
-            });
-
-        } catch (error) {
-            debugLog('Error capturing frame:', error);
-        }
-    }, CAPTURE_INTERVAL);
-
+    highlightVideo(video);
+    captureInterval = setInterval(captureTick, CAPTURE_INTERVAL);
     debugLog('Started capturing frames');
 }
 
@@ -569,59 +691,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// Observe for dynamically added video elements
-const observer = new MutationObserver((mutations) => {
-    const now = Date.now();
-    if (now - lastVideoCheck < VIDEO_CHECK_INTERVAL) return;
-    lastVideoCheck = now;
-
-    for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-            // Check for video elements
-            if (node.tagName === 'VIDEO') {
-                debugLog('New video element detected', node);
-                if (isCapturing) {
-                    video = node;
-                    highlightVideo(video);
-                }
-            }
-            // Check for video-player-container
-            if (node.tagName === 'VIDEO-PLAYER-CONTAINER') {
-                debugLog('New video-player-container detected', node);
-                if (isCapturing) {
-                    const canvas = findLargestCanvas(node);
-                    if (canvas) {
-                        video = canvas;
-                        highlightVideo(video);
-                    }
-                }
-            }
-        }
-    }
-});
-
-observer.observe(document.body, {
-    childList: true,
-    subtree: true
-});
-
-// Initial video check
-video = findVideo();
-if (video) {
-    debugLog('Found active video element', {
-        videoWidth: video.videoWidth,
-        videoHeight: video.videoHeight,
-        readyState: video.readyState,
-        currentTime: video.currentTime
-    });
-}
-
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         averageHash,
         ahashSimilarity,
         calculatePHash,
         calculateSimilarity,
-        createThumbnail
+        isBlankImage
     };
 } 

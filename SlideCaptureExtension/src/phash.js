@@ -87,4 +87,6 @@ const phash = (function () {
     };
 })();
 
-module.exports = phash; 
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = phash;
+} 

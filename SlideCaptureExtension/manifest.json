@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "SlideCapture",
-    "version": "0.0.0.1",
+    "version": "0.0.0.4",
     "description": "Capture slides from video streams and browser Zoom calls with automatic duplicate detection",
     "icons": {
         "128": "img/icon.png"
@@ -25,10 +25,11 @@
             ],
             "js": [
                 "src/phash.js",
-                "src/image_utils.js",
                 "src/content.js"
             ],
-            "all_frames": true
+            "all_frames": true,
+            "match_about_blank": true,
+            "match_origin_as_fallback": true
         }
     ],
     "action": {
