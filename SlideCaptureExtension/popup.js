@@ -3,6 +3,7 @@ let isCapturing = false;
 let selectedDirection = 'bottom-right';
 let widthPercentage = 100;
 let heightPercentage = 100;
+let autoTrim = true;
 
 // DOM Elements
 const startCaptureBtn = document.getElementById('startCapture');
@@ -13,6 +14,7 @@ const advancedOptions = document.getElementById('advancedOptions');
 const frameContainer = document.getElementById('frameContainer');
 const widthPercentageInput = document.getElementById('widthPercentage');
 const heightPercentageInput = document.getElementById('heightPercentage');
+const autoTrimInput = document.getElementById('autoTrim');
 const cropDirectionButtons = document.querySelectorAll('.crop-direction button');
 const deleteCaptureBtn = document.getElementById('deleteCapture');
 
@@ -78,10 +80,12 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedDirection = result.cropSettings.direction || 'bottom-right';
             widthPercentage = result.cropSettings.widthPercentage || 100;
             heightPercentage = result.cropSettings.heightPercentage || 100;
+            autoTrim = result.cropSettings.autoTrim !== false;
 
             // Update UI
             widthPercentageInput.value = widthPercentage;
             heightPercentageInput.value = heightPercentage;
+            autoTrimInput.checked = autoTrim;
             updateDirectionButtons();
         }
     });
@@ -155,6 +159,11 @@ heightPercentageInput.addEventListener('change', () => {
     saveSettings();
 });
 
+autoTrimInput.addEventListener('change', () => {
+    autoTrim = autoTrimInput.checked;
+    saveSettings();
+});
+
 // Helper Functions
 function updateDirectionButtons() {
     cropDirectionButtons.forEach(button => {
@@ -166,7 +175,8 @@ function saveSettings() {
     const settings = {
         direction: selectedDirection,
         widthPercentage,
-        heightPercentage
+        heightPercentage,
+        autoTrim
     };
     chrome.storage.local.set({ cropSettings: settings });
 }

@@ -119,6 +119,13 @@
             padding: 5px;
         }
 
+        .checkbox-control {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+
         .toggle-advanced {
             margin-top: 10px;
             background-color: #2196F3;
@@ -165,6 +172,11 @@
                     <input type="number" id="heightPercentage" min="10" max="100" value="100">
                 </div>
             </div>
+
+            <label class="checkbox-control">
+                <input type="checkbox" id="autoTrim" checked>
+                Trim black borders
+            </label>
         </div>
 
         <div class="frame-container" id="frameContainer">

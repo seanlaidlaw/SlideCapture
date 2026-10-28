@@ -6,7 +6,8 @@ let lastFrameData = null;
 let cropSettings = {
     direction: 'bottom-right',
     widthPercentage: 100,
-    heightPercentage: 100
+    heightPercentage: 100,
+    autoTrim: true
 };
 const CAPTURE_INTERVAL = 1000; // Capture every second
 const MIN_SIMILARITY_THRESHOLD = 0.95; // Minimum similarity to consider frames different
@@ -44,8 +45,8 @@ function highlightVideo(videoElement) {
     const src = getSourceSize(videoElement);
     let x = rect.left, y = rect.top, w = rect.width, h = rect.height;
 
-    if (!(cropSettings.widthPercentage === 100 && cropSettings.heightPercentage === 100) && src.width && src.height) {
-        const crop = calculateCropDimensions(src.width, src.height);
+    if (src.width && src.height) {
+        const crop = captureRect(src.width, src.height);
         const scaleX = rect.width / src.width;
         const scaleY = rect.height / src.height;
         x = rect.left + crop.x * scaleX;
@@ -155,6 +156,110 @@ function calculateCropDimensions(videoWidth, videoHeight) {
     }
 
     return { x, y, width, height };
+}
+
+
+const BORDER_LEVEL = 24;
+const SOLID_LEVEL = 64;
+const SOLID_DEPTH = 3;
+const TRIM_INSET = 1;
+const MIN_KEPT_FRACTION = 0.6;
+
+// Border depth per edge, in source pixels
+let borderTrim = null;
+
+function autoTrimEnabled() {
+    return cropSettings.autoTrim !== false;
+}
+
+function brightnessProfiles(src) {
+    const SAMPLES = 64;
+    const read = (width, height) => {
+        const c = document.createElement('canvas');
+        c.width = width;
+        c.height = height;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        // Smoothing blurs rows into each other
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(src.source, 0, 0, src.width, src.height, 0, 0, width, height);
+        return ctx.getImageData(0, 0, width, height).data;
+    };
+    const maxChannel = (d, i) => Math.max(d[i], d[i + 1], d[i + 2]);
+
+    const rowData = read(SAMPLES, src.height);
+    const rows = new Array(src.height).fill(0);
+    for (let y = 0; y < src.height; y++) {
+        for (let x = 0; x < SAMPLES; x++) rows[y] += maxChannel(rowData, (y * SAMPLES + x) * 4);
+        rows[y] /= SAMPLES;
+    }
+
+    const columnData = read(src.width, SAMPLES);
+    const columns = new Array(src.width).fill(0);
+    for (let y = 0; y < SAMPLES; y++) {
+        for (let x = 0; x < src.width; x++) columns[x] += maxChannel(columnData, (y * src.width + x) * 4);
+    }
+    for (let x = 0; x < src.width; x++) columns[x] /= SAMPLES;
+
+    return { rows, columns };
+}
+
+// Bar depth, or null unless solid content follows
+function measureBorder(profile) {
+    let depth = 0;
+    while (depth < profile.length && profile[depth] <= BORDER_LEVEL) depth++;
+    const start = depth > 0 ? depth + TRIM_INSET : 0;
+    if (start + SOLID_DEPTH > profile.length) return null;
+    for (let i = start; i < start + SOLID_DEPTH; i++) {
+        if (profile[i] < SOLID_LEVEL) return null;
+    }
+    return depth;
+}
+
+// Returns true when the trim changed
+function updateBorderTrim(src) {
+    if (!borderTrim || borderTrim.width !== src.width || borderTrim.height !== src.height) {
+        borderTrim = { width: src.width, height: src.height, top: null, bottom: null, left: null, right: null };
+    }
+    const { rows, columns } = brightnessProfiles(src);
+    const seen = {
+        top: measureBorder(rows),
+        bottom: measureBorder(rows.slice().reverse()),
+        left: measureBorder(columns),
+        right: measureBorder(columns.slice().reverse())
+    };
+    const keptHeight = 1 - ((seen.top || 0) + (seen.bottom || 0)) / src.height;
+    const keptWidth = 1 - ((seen.left || 0) + (seen.right || 0)) / src.width;
+    if (keptHeight < MIN_KEPT_FRACTION || keptWidth < MIN_KEPT_FRACTION) return false;
+
+    let changed = false;
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+        if (seen[edge] === null) continue;
+        const next = borderTrim[edge] === null ? seen[edge] : Math.min(borderTrim[edge], seen[edge]);
+        if (next !== borderTrim[edge]) {
+            borderTrim[edge] = next;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+function trimmedBox(width, height) {
+    if (!autoTrimEnabled() || !borderTrim) return { x: 0, y: 0, width, height };
+    const depth = edge => (borderTrim[edge] ? borderTrim[edge] + TRIM_INSET : 0);
+    const scaleX = width / borderTrim.width;
+    const scaleY = height / borderTrim.height;
+    const left = Math.round(depth('left') * scaleX);
+    const right = Math.round(depth('right') * scaleX);
+    const top = Math.round(depth('top') * scaleY);
+    const bottom = Math.round(depth('bottom') * scaleY);
+    return { x: left, y: top, width: width - left - right, height: height - top - bottom };
+}
+
+// User crop applied inside the trimmed box
+function captureRect(width, height) {
+    const box = trimmedBox(width, height);
+    const crop = calculateCropDimensions(box.width, box.height);
+    return { x: box.x + crop.x, y: box.y + crop.y, width: crop.width, height: crop.height };
 }
 
 // Calculate perceptual hash using phash library
@@ -485,7 +590,7 @@ async function getFrameSource(el) {
 
 function thumbnailFromSource(src) {
     const SIZE = 64;
-    const crop = calculateCropDimensions(src.width, src.height);
+    const crop = captureRect(src.width, src.height);
     const t = document.createElement('canvas');
     t.width = t.height = SIZE;
     const ctx = t.getContext('2d');
@@ -494,7 +599,7 @@ function thumbnailFromSource(src) {
 }
 
 function fullFrameFromSource(src) {
-    const crop = calculateCropDimensions(src.width, src.height);
+    const crop = captureRect(src.width, src.height);
     const c = document.createElement('canvas');
     c.width = crop.width;
     c.height = crop.height;
@@ -569,6 +674,7 @@ async function captureTick() {
                 blankFrameCount = 0;
                 useScreenshotMode = false;
                 lastFrameData = null;
+                borderTrim = null;
             }
             if (!video) {
                 debugLog('No video/canvas element found yet, will keep looking');
@@ -580,6 +686,16 @@ async function captureTick() {
 
         const src = await getFrameSource(video);
         if (!src) return;
+        if (autoTrimEnabled()) {
+            try {
+                if (updateBorderTrim(src)) {
+                    debugLog('Black border trim updated', borderTrim);
+                    highlightVideo(video);
+                }
+            } catch (e) {
+                debugLog('Border detection failed: ' + e.message);
+            }
+        }
         const thumbnail = thumbnailFromSource(src);
 
         if (!(src.source instanceof HTMLVideoElement) && isBlankImage(thumbnail)) {
@@ -650,6 +766,7 @@ function startCapture() {
     useScreenshotMode = false;
     blankFrameCount = 0;
     lastFrameData = null;
+    borderTrim = null;
     highlightVideo(video);
     captureInterval = setInterval(captureTick, CAPTURE_INTERVAL);
     debugLog('Started capturing frames');
@@ -664,6 +781,7 @@ function stopCapture() {
     unhighlightVideo(video);
     video = null;
     lastFrameData = null;
+    borderTrim = null;
     debugLog('Stopped capturing frames');
 }
 
