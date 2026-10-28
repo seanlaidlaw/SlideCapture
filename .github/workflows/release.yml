@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+    paths: [SlideCaptureExtension/manifest.json]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  EXTENSION_ID: omngfhiglnfkbdlhclninglgmgfamike
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: version
+        run: |
+          version=$(jq -r .version SlideCaptureExtension/manifest.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "v$version is already released"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing v$version"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      ZIP: SlideCaptureExtension_v${{ needs.check.outputs.version }}.zip
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Bundle extension
+        run: |
+          cd SlideCaptureExtension
+          git ls-files \
+            | grep -v -E '^(test/|node_modules/|package(-lock)?\.json$|src/image_utils\.js$)' \
+            | zip -X -@ "$GITHUB_WORKSPACE/$ZIP"
+          unzip -l "$GITHUB_WORKSPACE/$ZIP"
+
+      - id: google
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+
+      - name: Upload and publish to Chrome Web Store
+        env:
+          TOKEN: ${{ steps.google.outputs.access_token }}
+          ITEM: publishers/${{ secrets.CWS_PUBLISHER_ID }}/items/${{ env.EXTENSION_ID }}
+        run: |
+          api=https://chromewebstore.googleapis.com
+          auth="Authorization: Bearer $TOKEN"
+
+          response=$(curl -sS --fail-with-body -X POST -H "$auth" -T "$ZIP" "$api/upload/v2/$ITEM:upload")
+          echo "$response"
+          state=$(jq -r .uploadState <<< "$response")
+
+          for attempt in $(seq 30); do
+            case "$state" in IN_PROGRESS|UPLOAD_IN_PROGRESS) ;; *) break ;; esac
+            sleep 10
+            state=$(curl -sS --fail-with-body -H "$auth" "$api/v2/$ITEM:fetchStatus" | jq -r .lastAsyncUploadState)
+          done
+          if [ "$state" != SUCCEEDED ]; then
+            echo "::error::Chrome Web Store upload ended in state $state"
+            exit 1
+          fi
+
+          response=$(curl -sS --fail-with-body -X POST -H "$auth" "$api/v2/$ITEM:publish")
+          echo "$response"
+          echo "Submitted v$VERSION for review: $(jq -r .state <<< "$response")" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v$VERSION" "$ZIP" --title "v$VERSION" --target "$GITHUB_SHA" --generate-notes
