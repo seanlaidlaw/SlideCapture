@@ -45,7 +45,7 @@ jobs:
       id-token: write
     env:
       VERSION: ${{ needs.check.outputs.version }}
-      ZIP: SlideCaptureExtension_v${{ needs.check.outputs.version }}.zip
+      BUNDLE: SlideCaptureExtension_v${{ needs.check.outputs.version }}.zip
     steps:
       - uses: actions/checkout@v7
 
@@ -54,8 +54,8 @@ jobs:
           cd SlideCaptureExtension
           git ls-files \
             | grep -v -E '^(test/|node_modules/|package(-lock)?\.json$|src/image_utils\.js$)' \
-            | zip -X -@ "$GITHUB_WORKSPACE/$ZIP"
-          unzip -l "$GITHUB_WORKSPACE/$ZIP"
+            | zip -X -@ "$GITHUB_WORKSPACE/$BUNDLE"
+          unzip -l "$GITHUB_WORKSPACE/$BUNDLE"
 
       - id: google
         uses: google-github-actions/auth@v3
@@ -73,7 +73,7 @@ jobs:
           api=https://chromewebstore.googleapis.com
           auth="Authorization: Bearer $TOKEN"
 
-          response=$(curl -sS --fail-with-body -X POST -H "$auth" -T "$ZIP" "$api/upload/v2/$ITEM:upload")
+          response=$(curl -sS --fail-with-body -X POST -H "$auth" -T "$BUNDLE" "$api/upload/v2/$ITEM:upload")
           echo "$response"
           state=$(jq -r .uploadState <<< "$response")
 
@@ -94,4 +94,4 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v$VERSION" "$ZIP" --title "v$VERSION" --target "$GITHUB_SHA" --generate-notes
+        run: gh release create "v$VERSION" "$BUNDLE" --title "v$VERSION" --target "$GITHUB_SHA" --generate-notes
